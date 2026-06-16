@@ -2,86 +2,123 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
 
-MODEL_PATH = 'mujoco_menagerie/franka_emika_panda/scene.xml'
+MODEL_PATH = Path('mujoco_menagerie/franka_emika_panda/scene.xml')
 
-# Load the robot arm model
-model = mujoco.MjModel.from_xml_path(MODEL_PATH)
-data = mujoco.MjData(model)
-
-# Get the geom ID of the hand/gripper links to track collisions
-# In MuJoCo, collisions happen between "geoms" (geometries), not bodies.
-ee_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link7")
-hand_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "link7")
-
-time_history = []
-contact_force_history = []
-
-step_counter = 0
-DOWNSAMPLE_FACTOR = 10 # Only save every 10th physics step (Tracks at 50Hz instead of 500Hz)
-
-def custom_control_loop(model, data):
-    """
-    This function automatically executes at EVERY single physics time-step 
-    (usually 1000Hz) inside the interactive viewer.
-    """
-    global step_counter
-
-    # Scripted trajectory
-    data.ctrl[1] = -1.0
-    data.ctrl[2] = 0.5
-
-    if step_counter % DOWNSAMPLE_FACTOR == 0:
-    # Only save every 10th physics step (Tracks at 50Hz instead of 500Hz)
-        total_normal_force = 0.0
-
-        # Loop through every active contact collision currently in the simulator
-        for i in range(data.ncon):
-            contact = data.contact[i]
-            
-            # Identify which structural bodies own the two colliding geometries
-            body1_id = model.geom_bodyid[contact.geom1]
-            body2_id = model.geom_bodyid[contact.geom2]
-            
-            # If either body matching the collision is our hand link (ee_id)
-            if body1_id == ee_id or body2_id == ee_id:
-                # Extract the raw contact force vector
-                c_forces = np.zeros(6)
-                mujoco.mj_contactForce(model, data, i, c_forces)
-                
-                # c_forces[0] is the normal force pushing perpendicular to the floor
-                total_normal_force += c_forces[0]
+class FrankaForceEnv:
+    def __init__(self, scenario="hit_floor"):
+        self.scenario = scenario
         
-        # Log data
-        time_history.append(data.time)
-        contact_force_history.append(total_normal_force)
+        # Storage lists for timeline telemetry
+        self.time_history = []
+        self.force_history = []
+        self.step_counter = 0
+        self.downsample_factor = 10
+        
+        # 1. Build the MuJoCo model for the chosen scenario
+        self.model = self._build_model()
+        self.data = mujoco.MjData(self.model)
+        
+        # 3. Cache crucial structural IDs
+        self.ee_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "link7")
+        if self.scenario == "push_block":
+            self.block_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_block")
 
-    step_counter += 1
+    def _build_model(self):
+        """Load scene.xml from disk (so includes resolve), then inject scenario extras."""
+        spec = mujoco.MjSpec.from_file(str(MODEL_PATH))
 
-    # Print a clean, readable stream to the terminal for verification
-    # print(f"Time: {data.time:.2f}s | Net Ext Force: {total_normal_force:.2f} N")
+        if self.scenario == "push_block":
+            body = spec.worldbody.add_body(name="target_block", pos=[0.4, 0.0, 0.05])
+            body.add_freejoint()
+            body.add_geom(
+                type=mujoco.mjtGeom.mjGEOM_BOX,
+                size=[0.04, 0.04, 0.05],
+                mass=2.0,
+                rgba=[1, 0, 0, 1],
+                condim=3,
+                friction=[1, 0.005, 0.0001],
+            )
+        elif self.scenario != "hit_floor":
+            raise ValueError(f"Unknown scenario configuration: {self.scenario}")
 
-mujoco.set_mjcb_control(custom_control_loop)
+        return spec.compile()
 
-print("Launching Collision-Aware Viewer...")
-print("Drive the arm into the floor using the 'Control' sliders on the right panel, or let the script run.")
+    def _apply_control_policy(self):
+        """Factory Method: Changes how the arm moves depending on the task goal"""
+        if self.scenario == "hit_floor":
+            # Slam straight downwards
+            self.data.ctrl[1] = -1.0
+            self.data.ctrl[2] = 0.5
+            
+        elif self.scenario == "push_block":
+            # Phase 1: Get in position behind the box, Phase 2: Drive forward
+            if self.data.time < 2.0:
+                self.data.ctrl[1] = 0.5   
+                self.data.ctrl[3] = -1.5  
+            else:
+                self.data.ctrl[3] = -2.2  
 
-mujoco.viewer.launch(model, data)
+    def _extract_contact_forces(self):
+        """Factory Method: Decides what specific interactions to look for"""
+        total_force = 0.0
+        
+        for i in range(self.data.ncon):
+            contact = self.data.contact[i]
+            body1 = self.model.geom_bodyid[contact.geom1]
+            body2 = self.model.geom_bodyid[contact.geom2]
+            
+            if self.scenario == "hit_floor":
+                # Is the hand hitting anything (like the floor geom)?
+                if body1 == self.ee_id or body2 == self.ee_id:
+                    c_forces = np.zeros(6)
+                    mujoco.mj_contactForce(self.model, self.data, i, c_forces)
+                    total_force += c_forces[0]
+                    
+            elif self.scenario == "push_block":
+                # Is the hand explicitly interacting with the red block?
+                is_touching = (body1 == self.ee_id and body2 == self.block_id) or \
+                              (body1 == self.block_id and body2 == self.ee_id)
+                if is_touching:
+                    c_forces = np.zeros(6)
+                    mujoco.mj_contactForce(self.model, self.data, i, c_forces)
+                    total_force += c_forces[0]
+                    
+        return total_force
 
-print("\nSimulation ended. Generating your timeline force graph...")
+    def controller_callback(self, model, data):
+        """The master loop runner tied directly to MuJoCo's internal heartbeats"""
+        # Execute the movement steps
+        self._apply_control_policy()
+        
+        # Log metrics based on downsampled intervals
+        if self.step_counter % self.downsample_factor == 0:
+            force_value = self._extract_contact_forces()
+            self.time_history.append(self.data.time)
+            self.force_history.append(force_value)
+            
+        self.step_counter += 1
 
-# Visualise force against time
-t = np.array(time_history)
-f_contact = np.array(contact_force_history)
+    def run(self):
+        """Launches the window execution"""
+        print(f"Booting up environment factory running: [{self.scenario.upper()}]")
+        
+        mujoco.set_mjcb_control(self.controller_callback)
+        mujoco.viewer.launch(self.model, self.data)
+        
+        self.plot_results()
 
-plt.figure(figsize=(10, 5))
-plt.plot(t, f_contact, label='True Normal Contact Force (N)', color='#d62728', linewidth=2)
+    def plot_results(self):
+        plt.figure(figsize=(10, 4))
+        plt.plot(self.time_history, self.force_history, color='purple', linewidth=2)
+        plt.title(f'Force Estimation Timeline - Scenario: {self.scenario}', fontsize=12, fontweight='bold')
+        plt.xlabel('Seconds')
+        plt.ylabel('Normal Force (N)')
+        plt.grid(True, linestyle=':')
+        plt.tight_layout()
+        plt.show()
 
-plt.title('End-Effector Floor Collision Impact Profile', fontsize=14, fontweight='bold')
-plt.xlabel('Simulation Time (Seconds)', fontsize=12)
-plt.ylabel('Impact Force (Newtons)', fontsize=12)
-plt.grid(True, linestyle=':', alpha=0.6)
-plt.legend(loc='upper right')
-
-plt.tight_layout()
-plt.show()
+if __name__ == "__main__":
+    env = FrankaForceEnv(scenario="push_block") # "hit_floor" or "push_block"
+    env.run()
