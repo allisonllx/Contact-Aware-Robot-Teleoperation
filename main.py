@@ -1,10 +1,13 @@
 import mujoco
 import mujoco.viewer
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from pathlib import Path
 
 MODEL_PATH = Path('mujoco_menagerie/franka_emika_panda/scene.xml')
+PLOT_PATH = Path('force_comparison.png')
 
 class FrankaForceEnv:
     def __init__(self, scenario="hit_floor"):
@@ -12,7 +15,9 @@ class FrankaForceEnv:
         
         # Storage lists for timeline telemetry
         self.time_history = []
-        self.force_history = []
+        self.true_force_history = []
+        self.estimated_force_history = []
+
         self.step_counter = 0
         self.downsample_factor = 10
         
@@ -22,6 +27,7 @@ class FrankaForceEnv:
         
         # 3. Cache crucial structural IDs
         self.ee_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "link7")
+        self.hand_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "hand")
         if self.scenario == "push_block":
             self.block_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_block")
 
@@ -60,74 +66,116 @@ class FrankaForceEnv:
             else:
                 self.data.ctrl[3] = -2.2  
 
-    def _extract_contact_forces(self):
-        """Factory Method: Broadened to capture any end-effector assembly collision"""
-        total_force = 0.0
-        
-        # Cache all body IDs that belong to the gripper/hand assembly group
-        # This covers whatever part of the hand or wrist slams into the object
-        gripper_body_names = ["link7", "hand", "left_finger", "right_finger"]
-        gripper_body_ids = []
-        for name in gripper_body_names:
-            b_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, name)
-            if b_id != -1: # Ensure the name exists in this specific XML configuration
-                gripper_body_ids.append(b_id)
-        
+    def _get_active_gripper_body_ids(self):
+        """Returns the IDs of the active tool center contact surfaces"""
+        gripper_names = ["hand", "left_finger", "right_finger"]
+        return [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, name) for name in gripper_names]
+    
+    def _calculate_ground_truth_force(self, gripper_ids):
+        """Extracts direct oracle physical normal force (F_true)"""
+        total_true_force = 0.0
         for i in range(self.data.ncon):
             contact = self.data.contact[i]
             body1 = self.model.geom_bodyid[contact.geom1]
             body2 = self.model.geom_bodyid[contact.geom2]
             
+            is_touching = False
             if self.scenario == "hit_floor":
-                # Check if ANY part of our hand assembly group hits the floor
-                if body1 in gripper_body_ids or body2 in gripper_body_ids:
-                    c_forces = np.zeros(6)
-                    mujoco.mj_contactForce(self.model, self.data, i, c_forces)
-                    total_force += c_forces[0]
-                    
+                if body1 in gripper_ids or body2 in gripper_ids:
+                    is_touching = True
             elif self.scenario == "push_block":
-                # Check if the collision is between our red block AND any part of the hand assembly group
-                is_touching = (body1 in gripper_body_ids and body2 == self.block_id) or \
-                              (body2 in gripper_body_ids and body1 == self.block_id)
+                is_touching = (body1 in gripper_ids and body2 == self.block_id) or \
+                              (body2 in gripper_ids and body1 == self.block_id)
                               
-                if is_touching:
-                    c_forces = np.zeros(6)
-                    mujoco.mj_contactForce(self.model, self.data, i, c_forces)
-                    total_force += c_forces[0]
-                    
-        return total_force
+            if is_touching:
+                c_forces = np.zeros(6)
+                mujoco.mj_contactForce(self.model, self.data, i, c_forces)
+                total_true_force += c_forces[0]
+        return total_true_force
 
-    def controller_callback(self, model, data):
-        """The master loop runner tied directly to MuJoCo's internal heartbeats"""
-        # Execute the movement steps
-        # self._apply_control_policy()
+    def _estimate_virtual_force(self):
+        """Step 2 & 3: Math pipeline to compute F_estimated from joint torques"""
+        # A. Grab raw motor efforts from the 7 arm joints
+        tau_measured = self.data.qfrc_actuator[:7]
         
-        # Log metrics based on downsampled intervals
+        # B. Inverse dynamics via mj_rne (safe inside viewer callbacks; mj_inverse is not)
+        tau_id = np.zeros(self.model.nv)
+        mujoco.mj_rne(self.model, self.data, 1, tau_id)
+        tau_bias = tau_id[:7]
+        
+        # C. Isolate the external torque component
+        tau_ext = tau_measured - tau_bias
+        
+        # D. Extract the 6x7 operational space Jacobian for the Hand body position
+        jac_p = np.zeros((3, self.model.nv))
+        jac_r = np.zeros((3, self.model.nv))
+        mujoco.mj_jac(self.model, self.data, jac_p, jac_r, self.data.xpos[self.hand_body_id], self.hand_body_id)
+        J = np.vstack([jac_p, jac_r])[:, :7]
+        
+        # E. Map joint torques to Cartesian coordinates using the Pseudo-Inverse of J^T
+        J_T_pinv = np.linalg.pinv(J.T)
+        wrench_estimated = J_T_pinv @ tau_ext
+        
+        # F. Return the magnitude of the linear spatial force vector (X, Y, Z)
+        linear_forces = wrench_estimated[:3]
+        return np.linalg.norm(linear_forces)
+
+    def _record_telemetry(self):
+        """Sample ground-truth and estimated forces (call after mj_step, not inside callbacks)."""
         if self.step_counter % self.downsample_factor == 0:
-            force_value = self._extract_contact_forces()
+            gripper_ids = self._get_active_gripper_body_ids()
+            f_true = self._calculate_ground_truth_force(gripper_ids)
+            f_est = self._estimate_virtual_force()
+
             self.time_history.append(self.data.time)
-            self.force_history.append(force_value)
-            
+            self.true_force_history.append(f_true)
+            self.estimated_force_history.append(f_est)
+
         self.step_counter += 1
+
+    def _apply_control_policy_callback(self, model, data):
+        """Control hook: only write actuator commands, no dynamics/Jacobian calls."""
+        self._apply_control_policy()
+
+    def _passive_callback(self, model, data):
+        """Runs after forward kinematics each step; safe place to read forces/Jacobians."""
+        self._record_telemetry()
 
     def run(self):
         """Launches the window execution"""
         print(f"Booting up environment factory running: [{self.scenario.upper()}]")
-        
-        mujoco.set_mjcb_control(self.controller_callback)
-        mujoco.viewer.launch(self.model, self.data)
-        
-        self.plot_results()
 
-    def plot_results(self):
-        plt.figure(figsize=(10, 4))
-        plt.plot(self.time_history, self.force_history, color='purple', linewidth=2)
-        plt.title(f'Force Estimation Timeline - Scenario: {self.scenario}', fontsize=12, fontweight='bold')
-        plt.xlabel('Seconds')
-        plt.ylabel('Normal Force (N)')
-        plt.grid(True, linestyle=':')
-        plt.tight_layout()
-        plt.show()
+        # Optional automated motion; comment out to keep manual drag-only control.
+        # mujoco.set_mjcb_control(self._apply_control_policy_callback)
+
+        mujoco.set_mjcb_passive(self._passive_callback)
+        try:
+            mujoco.viewer.launch(self.model, self.data)
+        finally:
+            mujoco.set_mjcb_passive(None)
+
+        self.plot_comparison()
+
+    def plot_comparison(self):
+        if not self.time_history:
+            print("No force samples recorded; skipping plot.")
+            return
+
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(self.time_history, self.true_force_history,
+                label='Ground Truth (mj_contactForce)', color='black', linewidth=2.5)
+        ax.plot(self.time_history, self.estimated_force_history,
+                label='Virtual Estimate (Jacobian Math)', color='orange', linestyle='--', linewidth=2)
+
+        ax.set_title('Verification Profile: Measured vs. Estimated Contact Forces', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Simulation Time (Seconds)')
+        ax.set_ylabel('Force Amplitude (Newtons)')
+        ax.grid(True, linestyle=':')
+        ax.legend(loc='upper right')
+        fig.tight_layout()
+        fig.savefig(PLOT_PATH, dpi=150)
+        plt.close(fig)
+        print(f"Saved force plot to {PLOT_PATH.resolve()}")
 
 if __name__ == "__main__":
     env = FrankaForceEnv(scenario="push_block") # "hit_floor" or "push_block"
