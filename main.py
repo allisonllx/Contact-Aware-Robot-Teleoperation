@@ -1,9 +1,6 @@
 import mujoco
 import mujoco.viewer
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 from pathlib import Path
 
 MODEL_PATH = Path('mujoco_menagerie/franka_emika_panda/scene.xml')
@@ -151,6 +148,13 @@ class FrankaForceEnv:
         mujoco.set_mjcb_passive(self._passive_callback)
         try:
             mujoco.viewer.launch(self.model, self.data)
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "MuJoCo viewer failed to start. Try: (1) close any stuck "
+                "simulator windows, (2) run from Terminal.app instead of an "
+                "embedded shell, (3) run `pkill -f 'python.*main.py'`, then "
+                "retry."
+            ) from exc
         finally:
             mujoco.set_mjcb_passive(None)
 
@@ -160,6 +164,11 @@ class FrankaForceEnv:
         if not self.time_history:
             print("No force samples recorded; skipping plot.")
             return
+
+        # Import after the viewer closes to avoid macOS GUI/GLFW conflicts.
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.plot(self.time_history, self.true_force_history,
