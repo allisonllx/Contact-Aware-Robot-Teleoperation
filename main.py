@@ -1,3 +1,4 @@
+import csv
 import mujoco
 import mujoco.viewer
 import numpy as np
@@ -17,6 +18,11 @@ class FrankaForceEnv:
 
         self.step_counter = 0
         self.downsample_factor = 10
+
+        # Telemetry CSV Setup
+        self.log_file = open("force_verification_log.csv", mode="w", newline="")
+        self.log_writer = csv.writer(self.log_file)
+        self.log_writer.writerow(["Time (s)", "Ground Truth (N)", "Jacobian Estimate (N)"])
         
         # 1. Build the MuJoCo model for the chosen scenario
         self.model = self._build_model()
@@ -33,11 +39,11 @@ class FrankaForceEnv:
         spec = mujoco.MjSpec.from_file(str(MODEL_PATH))
 
         if self.scenario == "push_block":
-            body = spec.worldbody.add_body(name="target_block", pos=[0.4, 0.0, 0.05])
+            body = spec.worldbody.add_body(name="target_block", pos=[0.55, 0.0, 0.03])
             body.add_freejoint()
             body.add_geom(
                 type=mujoco.mjtGeom.mjGEOM_BOX,
-                size=[0.08, 0.08, 0.05],
+                size=[0.08, 0.08, 0.06],
                 mass=5.0, # 5.0 kg
                 rgba=[1, 0, 0, 1],
                 condim=3,
@@ -56,36 +62,42 @@ class FrankaForceEnv:
             self.data.ctrl[2] = 0.5
             
         elif self.scenario == "push_block":
-            # Phase 1: Staging (0.0 to 1.5 seconds) -> Hover right above the block
-            # Phase 1: Ready Pose (0.0 to 1.5 seconds) -> Hold perfectly behind the block
+            # Phase 1A: High Hover (0.0 to 1.5 seconds)
+            # Stay completely elevated above the block's workspace profile
             if self.data.time < 1.5:
-                self.data.ctrl[1] = 0.229  # Shoulder base angle
-                self.data.ctrl[3] = -2.37  # Low elbow flex (Frame 1 pose)
+                self.data.ctrl[1] = 0.229
+                self.data.ctrl[3] = -1.80  # 🟢 High, retracted elbow position
                 self.data.ctrl[5] = 1.87
-                self.data.ctrl[6] = 1.87
+                self.data.ctrl[6] = 0.80
                 self.data.ctrl[7] = 255
                 
-            # Phase 2: Coordinated Horizontal Slide (1.5 to 4.5 seconds)
-            elif self.data.time < 4.5:
-                progress = (self.data.time - 1.5) / 3.0  
+            # Phase 1B: Vertical Drop Down (1.5 to 3.0 seconds)
+            # Sink down directly behind the back face of the block
+            elif self.data.time < 3.0:
+                progress = (self.data.time - 1.5) / 1.5
+                self.data.ctrl[1] = 0.229
+                # Smoothly drop elbow from -1.80 down to your stable stance of -2.37
+                self.data.ctrl[3] = -1.80 + progress * (-2.37 - (-1.80))
+                self.data.ctrl[5] = 1.87 + progress * (2.25 - 1.87)
+                self.data.ctrl[6] = 0.80
+                self.data.ctrl[7] = 255
                 
-                # 1. As the elbow extends forward...
+            # Phase 2: Coordinated Flat Horizontal Push (3.0 to 6.0 seconds)
+            # Push forward while leaning the shoulder down to keep the path flat
+            elif self.data.time < 6.0:
+                progress = (self.data.time - 3.0) / 3.0
                 self.data.ctrl[3] = -2.37 + progress * (-2.05 - (-2.37))
-                
-                # 2. ...simultaneously lean the shoulder forward/down to kill the upward arc!
-                # This drops the arm base just enough to keep the hand perfectly level.
                 self.data.ctrl[1] = 0.229 + progress * (0.420 - 0.229)
-                
-                self.data.ctrl[5] = 1.87
-                self.data.ctrl[6] = 1.87
+                self.data.ctrl[5] = 2.25
+                self.data.ctrl[6] = 0.80
                 self.data.ctrl[7] = 255
                 
-            # Phase 3: Maintain Continuous Pressure (After 4.5 seconds)
+            # Phase 3: Hold the plateau force (After 6.0 seconds)
             else:
-                self.data.ctrl[1] = 0.420  # Leaned forward position
-                self.data.ctrl[3] = -2.05  # Fully extended position
-                self.data.ctrl[5] = 1.87
-                self.data.ctrl[6] = 1.87
+                self.data.ctrl[1] = 0.420
+                self.data.ctrl[3] = -2.05
+                self.data.ctrl[5] = 2.25
+                self.data.ctrl[6] = 0.80
                 self.data.ctrl[7] = 255
 
     def _get_active_gripper_body_ids(self):
@@ -156,6 +168,8 @@ class FrankaForceEnv:
             self.true_force_history.append(f_true)
             self.estimated_force_history.append(f_est)
 
+            self.log_writer.writerow([self.data.time, f_true, f_est])
+
         self.step_counter += 1
 
     def _apply_control_policy_callback(self, model, data):
@@ -185,6 +199,7 @@ class FrankaForceEnv:
             ) from exc
         finally:
             mujoco.set_mjcb_passive(None)
+            self.log_file.close()
 
         self.plot_comparison()
 
@@ -213,6 +228,14 @@ class FrankaForceEnv:
         fig.savefig(PLOT_PATH, dpi=150)
         plt.close(fig)
         print(f"Saved force plot to {PLOT_PATH.resolve()}")
+
+    def __del__(self):
+        """Fallback safety wrapper to close open file streams if environment catches an exception"""
+        try:
+            if hasattr(self, 'log_file') and not self.log_file.closed:
+                self.log_file.close()
+        except:
+            pass
 
 if __name__ == "__main__":
     env = FrankaForceEnv(scenario="push_block") # "hit_floor" or "push_block"
