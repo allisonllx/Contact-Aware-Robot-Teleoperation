@@ -741,11 +741,11 @@ class FrankaForceEnv:
         viewer.user_scn.ngeom += 1
         mujoco.mjv_initGeom(
             viewer.user_scn.geoms[geom_idx],
-            type=mujoco.mjtGeom.mjGEOM_ARROW,
-            size=[0.006, 0.006, arrow_length],
-            pos=self.data.xpos[self.hand_body_id],
-            mat=self.data.xmat[self.hand_body_id].reshape(3, 3),
-            rgba=arrow_color,
+            mujoco.mjtGeom.mjGEOM_ARROW,
+            np.array([0.006, 0.006, arrow_length], dtype=np.float64).reshape(3, 1),
+            self.data.xpos[self.hand_body_id].astype(np.float64).reshape(3, 1),
+            self.data.xmat[self.hand_body_id].astype(np.float64).reshape(9, 1),
+            np.array(arrow_color, dtype=np.float32).reshape(4, 1),
         )
 
     def _apply_control_policy_callback(self, model, data):
