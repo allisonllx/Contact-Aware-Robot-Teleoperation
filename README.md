@@ -10,7 +10,7 @@ MuJoCo simulations for checking contact-force estimates on a Franka Emika Panda 
 
 ## Setup
 
-Activate your `odyssey` environment, or create a fresh Python environment and install the requirements:
+Activate your `odyssey` environment, where `python` and `mjpython` should resolve to the MuJoCo-capable environment. If you are setting up from scratch instead:
 
 ```bash
 python3 -m venv .venv
@@ -62,7 +62,15 @@ mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-v
 mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual both
 ```
 
-`arrow` draws a red/orange force arrow offset beside the hand, `ring` draws a red/orange ring at the strongest peg contact point, and `both` draws both overlays. The size of each overlay uses a log scale from roughly `10 N` to `1000 N`, so mid-range forces remain visually distinguishable without huge spikes dominating the view.
+`arrow` draws a red/orange vector at the strongest peg contact point, pointing in the world-space force direction applied to the peg. `ring` draws a red/orange ring at the strongest contact surface, and `both` draws both overlays. The size of each overlay uses a log scale from roughly `10 N` to `1000 N`, so mid-range forces remain visually distinguishable without huge spikes dominating the view.
+
+Enable the experimental impedance cushion during interactive peg insertion:
+
+```bash
+mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual both --contact-cushion
+```
+
+The cushion activates after contact force crosses `--cushion-threshold` (`100 N` by default). While active, the arm position servos are commanded to the current joint positions to cancel the servo spring, and a torque-limited Cartesian spring/damper is applied through `J.T @ wrench`. You can tune it with `--impedance-kp`, `--impedance-dp`, `--impedance-kr`, `--impedance-dr`, and `--impedance-torque-limit`.
 
 Record a video of a run:
 
@@ -104,9 +112,19 @@ franka_force/scenarios/         Scenario-specific model, control, and contact lo
 
 `FrankaForceEnv` delegates scenario-specific behavior through the scenario registry in `franka_force/scenarios/__init__.py`, so adding a new scenario should usually mean adding one scenario module and registering it there.
 
+The CSV files also include cushion state, cushion scale, impedance torque norm, and the strongest contact-force vector components.
+
 ## Control Experiments
 
-The current interactive controller reacts after contact is detected through MuJoCo contact forces. It does not slow down before first contact because there is no proximity signal in the current setup. A future `--contact-cushion` experiment could reduce teleop target speed, back off, or lower controller aggressiveness after force crosses a threshold, but true pre-contact impedance behavior would need either a proximity sensor, simulation-only distance checks, or a different torque-level control path.
+The `--contact-cushion` mode is reactive, not predictive: it only engages after MuJoCo reports contact force. Without a proximity sensor or a simulation-only distance check, the controller cannot slow before first contact.
+
+The experimental cushion uses the impedance idea:
+
+```text
+tau_impedance = J.T @ (K * (X_target - X_current) - D * Xdot_current)
+```
+
+This first version keeps normal IK as the default and switches to torque-level impedance only after the force threshold is exceeded. It is useful for comparing force graphs with and without cushioning, but the gains should be treated as tuning parameters rather than final control values.
 
 ## Development Checks
 

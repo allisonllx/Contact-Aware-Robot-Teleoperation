@@ -1,6 +1,14 @@
 import argparse
 
 from franka_force import FORCE_VISUAL_MODES, SCENARIOS
+from franka_force.config import (
+    DEFAULT_CUSHION_THRESHOLD,
+    DEFAULT_IMPEDANCE_DP,
+    DEFAULT_IMPEDANCE_DR,
+    DEFAULT_IMPEDANCE_KP,
+    DEFAULT_IMPEDANCE_KR,
+    DEFAULT_IMPEDANCE_TORQUE_LIMIT,
+)
 
 
 def parse_args():
@@ -32,6 +40,47 @@ def parse_args():
         action="store_true",
         help="Save run_recording.mp4 in results/<scenario>/ (uses passive viewer; mjpython on macOS)",
     )
+    parser.add_argument(
+        "--contact-cushion",
+        action="store_true",
+        help="Enable experimental impedance cushion (peg_in_hole + --interactive only)",
+    )
+    parser.add_argument(
+        "--cushion-threshold",
+        type=float,
+        default=DEFAULT_CUSHION_THRESHOLD,
+        help="Contact force threshold in newtons that activates --contact-cushion",
+    )
+    parser.add_argument(
+        "--impedance-kp",
+        type=float,
+        default=DEFAULT_IMPEDANCE_KP,
+        help="Cartesian translational stiffness for --contact-cushion",
+    )
+    parser.add_argument(
+        "--impedance-dp",
+        type=float,
+        default=DEFAULT_IMPEDANCE_DP,
+        help="Cartesian translational damping for --contact-cushion",
+    )
+    parser.add_argument(
+        "--impedance-kr",
+        type=float,
+        default=DEFAULT_IMPEDANCE_KR,
+        help="Cartesian rotational stiffness for --contact-cushion",
+    )
+    parser.add_argument(
+        "--impedance-dr",
+        type=float,
+        default=DEFAULT_IMPEDANCE_DR,
+        help="Cartesian rotational damping for --contact-cushion",
+    )
+    parser.add_argument(
+        "--impedance-torque-limit",
+        type=float,
+        default=DEFAULT_IMPEDANCE_TORQUE_LIMIT,
+        help="Per-joint torque clamp for --contact-cushion",
+    )
     return parser.parse_args()
 
 
@@ -45,5 +94,12 @@ if __name__ == "__main__":
         force_feedback=args.force_feedback,
         force_visual=args.force_visual,
         record_video=args.record_video,
+        contact_cushion=args.contact_cushion,
+        cushion_threshold=args.cushion_threshold,
+        impedance_kp=args.impedance_kp,
+        impedance_dp=args.impedance_dp,
+        impedance_kr=args.impedance_kr,
+        impedance_dr=args.impedance_dr,
+        impedance_torque_limit=args.impedance_torque_limit,
     )
     env.run()

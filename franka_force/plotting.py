@@ -19,8 +19,23 @@ def plot_force_comparison(env):
     in_contact = np.array(env.in_contact_history, dtype=bool)
     is_anomaly = np.array(env.anomaly_history, dtype=bool)
     is_clean = ~is_anomaly
+    cushion_active = _history_array(env, "cushion_active_history", len(t), dtype=bool)
+    cushion_scale = _history_array(env, "cushion_scale_history", len(t), dtype=float)
+    impedance_tau_norm = _history_array(env, "impedance_tau_norm_history", len(t), dtype=float)
+    contact_force_vectors = _contact_vector_history(env, len(t))
 
-    _write_filtered_csv(env.telemetry_filtered_path, t, f_true, f_est, in_contact, is_clean)
+    _write_filtered_csv(
+        env.telemetry_filtered_path,
+        t,
+        f_true,
+        f_est,
+        in_contact,
+        is_clean,
+        cushion_active,
+        cushion_scale,
+        impedance_tau_norm,
+        contact_force_vectors,
+    )
 
     _save_plot(
         plt,
@@ -73,13 +88,58 @@ def plot_force_comparison(env):
           f"({100 * n_anomaly / len(t):.1f}%)")
 
 
-def _write_filtered_csv(path, times, true_forces, est_forces, in_contact, is_clean):
+def _history_array(env, name, expected_len, dtype=float):
+    values = getattr(env, name, [])
+    if len(values) != expected_len:
+        return np.zeros(expected_len, dtype=dtype)
+    return np.array(values, dtype=dtype)
+
+
+def _contact_vector_history(env, expected_len):
+    values = getattr(env, "contact_force_vector_history", [])
+    if len(values) != expected_len:
+        return np.zeros((expected_len, 3), dtype=float)
+    return np.array(values, dtype=float)
+
+
+def _write_filtered_csv(
+    path,
+    times,
+    true_forces,
+    est_forces,
+    in_contact,
+    is_clean,
+    cushion_active,
+    cushion_scale,
+    impedance_tau_norm,
+    contact_force_vectors,
+):
     with open(path, mode="w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["Time (s)", "Ground Truth (N)", "Jacobian Estimate (N)", "In Contact"])
+        writer.writerow([
+            "Time (s)",
+            "Ground Truth (N)",
+            "Jacobian Estimate (N)",
+            "In Contact",
+            "Cushion Active",
+            "Cushion Scale",
+            "Impedance Tau Norm",
+            "Contact Force X (N)",
+            "Contact Force Y (N)",
+            "Contact Force Z (N)",
+        ])
         for i in np.where(is_clean)[0]:
             writer.writerow([
-                times[i], true_forces[i], est_forces[i], int(in_contact[i])
+                times[i],
+                true_forces[i],
+                est_forces[i],
+                int(in_contact[i]),
+                int(cushion_active[i]),
+                cushion_scale[i],
+                impedance_tau_norm[i],
+                contact_force_vectors[i, 0],
+                contact_force_vectors[i, 1],
+                contact_force_vectors[i, 2],
             ])
     print(f"Saved filtered CSV to {path.resolve()}")
 

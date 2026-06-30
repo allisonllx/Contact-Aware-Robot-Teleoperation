@@ -4,7 +4,17 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 
-from .config import FORCE_VISUAL_MODES, MODEL_PATH, RESULTS_DIR
+from .config import (
+    DEFAULT_CUSHION_THRESHOLD,
+    DEFAULT_IMPEDANCE_DP,
+    DEFAULT_IMPEDANCE_DR,
+    DEFAULT_IMPEDANCE_KP,
+    DEFAULT_IMPEDANCE_KR,
+    DEFAULT_IMPEDANCE_TORQUE_LIMIT,
+    FORCE_VISUAL_MODES,
+    MODEL_PATH,
+    RESULTS_DIR,
+)
 from .plotting import plot_force_comparison
 from .recording import VideoRecorder
 from .scenarios import SCENARIOS, get_scenario
@@ -18,6 +28,13 @@ class FrankaForceEnv:
         force_feedback=False,
         force_visual="arrow",
         record_video=False,
+        contact_cushion=False,
+        cushion_threshold=DEFAULT_CUSHION_THRESHOLD,
+        impedance_kp=DEFAULT_IMPEDANCE_KP,
+        impedance_dp=DEFAULT_IMPEDANCE_DP,
+        impedance_kr=DEFAULT_IMPEDANCE_KR,
+        impedance_dr=DEFAULT_IMPEDANCE_DR,
+        impedance_torque_limit=DEFAULT_IMPEDANCE_TORQUE_LIMIT,
     ):
         if scenario not in SCENARIOS:
             raise ValueError(f"Unknown scenario: {scenario}. Choose from {SCENARIOS}")
@@ -30,11 +47,26 @@ class FrankaForceEnv:
         self.force_feedback = force_feedback
         self.force_visual = force_visual
         self.record_video = record_video
+        self.contact_cushion = contact_cushion
+        self.cushion_threshold = cushion_threshold
+        self.impedance_kp = impedance_kp
+        self.impedance_dp = impedance_dp
+        self.impedance_kr = impedance_kr
+        self.impedance_dr = impedance_dr
+        self.impedance_torque_limit = impedance_torque_limit
 
         if force_feedback and not interactive:
             raise ValueError("force_feedback requires interactive=True")
         if interactive and not self.scenario_impl.supports_interactive:
             raise ValueError("interactive mode is only supported for peg_in_hole")
+        if contact_cushion and (scenario != "peg_in_hole" or not interactive):
+            raise ValueError("contact_cushion requires scenario='peg_in_hole' and interactive=True")
+        if cushion_threshold <= 0.0:
+            raise ValueError("cushion_threshold must be positive")
+        if impedance_kp < 0.0 or impedance_dp < 0.0 or impedance_kr < 0.0 or impedance_dr < 0.0:
+            raise ValueError("impedance gains and damping values must be non-negative")
+        if impedance_torque_limit <= 0.0:
+            raise ValueError("impedance_torque_limit must be positive")
 
         self.results_dir = RESULTS_DIR / scenario
         self.results_dir.mkdir(parents=True, exist_ok=True)
@@ -58,6 +90,10 @@ class FrankaForceEnv:
         self.estimated_force_history = []
         self.in_contact_history = []
         self.anomaly_history = []
+        self.cushion_active_history = []
+        self.cushion_scale_history = []
+        self.impedance_tau_norm_history = []
+        self.contact_force_vector_history = []
 
         self.step_counter = 0
         self.downsample_factor = 10
@@ -67,6 +103,13 @@ class FrankaForceEnv:
         self.latest_contact_pos = None
         self.latest_contact_frame = None
         self.latest_contact_force = 0.0
+        self.latest_contact_force_vector = np.zeros(3)
+        self.latest_contact_arrow_pos = None
+        self.latest_contact_arrow_vector = np.zeros(3)
+        self.latest_contact_arrow_force = 0.0
+        self.cushion_active = False
+        self.cushion_scale = 0.0
+        self.impedance_tau_norm = 0.0
 
         self.scenario_impl.initialize_state(self)
 
@@ -74,7 +117,17 @@ class FrankaForceEnv:
         self.log_file = open(self.telemetry_path, mode="w", newline="")
         self.log_writer = csv.writer(self.log_file)
         self.log_writer.writerow([
-            "Time (s)", "Ground Truth (N)", "Jacobian Estimate (N)", "In Contact", "Is Anomaly"
+            "Time (s)",
+            "Ground Truth (N)",
+            "Jacobian Estimate (N)",
+            "In Contact",
+            "Is Anomaly",
+            "Cushion Active",
+            "Cushion Scale",
+            "Impedance Tau Norm",
+            "Contact Force X (N)",
+            "Contact Force Y (N)",
+            "Contact Force Z (N)",
         ])
 
         self.model = self._build_model()
@@ -170,8 +223,25 @@ class FrankaForceEnv:
             self.estimated_force_history.append(f_est)
             self.in_contact_history.append(in_contact)
             self.anomaly_history.append(is_anomaly)
+            self.cushion_active_history.append(self.cushion_active)
+            self.cushion_scale_history.append(self.cushion_scale)
+            self.impedance_tau_norm_history.append(self.impedance_tau_norm)
+            contact_force_vector = np.asarray(self.latest_contact_force_vector, dtype=float).copy()
+            self.contact_force_vector_history.append(contact_force_vector)
 
-            self.log_writer.writerow([self.data.time, f_true, f_est, int(in_contact), int(is_anomaly)])
+            self.log_writer.writerow([
+                self.data.time,
+                f_true,
+                f_est,
+                int(in_contact),
+                int(is_anomaly),
+                int(self.cushion_active),
+                self.cushion_scale,
+                self.impedance_tau_norm,
+                contact_force_vector[0],
+                contact_force_vector[1],
+                contact_force_vector[2],
+            ])
 
         self.step_counter += 1
 

@@ -31,6 +31,12 @@ class PegInHoleScenario(Scenario):
         env._keyboard_listener = None
         env._peg_home_q = np.array([0.0, 0.229, 0.0, -1.80, 0.0, 2.25, 0.80])
         env._peg_down = np.array([0.0, 0.0, -1.0])
+        env.cushion_release_threshold = env.cushion_threshold * 0.60
+        env._smoothed_contact_arrow_pos = None
+        env._smoothed_contact_arrow_vector = np.zeros(3)
+        env._smoothed_contact_arrow_force = 0.0
+        env._contact_arrow_smoothing = 0.28
+        env._contact_arrow_reset_distance = 0.018
 
     def augment_model_spec(self, env, spec):
         hand_body = spec.body("hand")
@@ -101,10 +107,20 @@ class PegInHoleScenario(Scenario):
         self._apply_peg_ik_control(env)
 
     def sample_forces(self, env):
-        in_contact, f_true, contact_pos, contact_frame, contact_force = self._peg_contact_summary(env)
+        (
+            in_contact,
+            f_true,
+            contact_pos,
+            contact_frame,
+            contact_force,
+            contact_force_vector,
+            contact_arrow_vector,
+        ) = self._peg_contact_summary(env)
         env.latest_contact_pos = contact_pos
         env.latest_contact_frame = contact_frame
         env.latest_contact_force = contact_force
+        env.latest_contact_force_vector = contact_force_vector
+        self._update_contact_arrow_visual(env, in_contact, contact_pos, contact_force, contact_arrow_vector)
         f_est = env._estimate_virtual_force() if in_contact else 0.0
         return in_contact, f_true, f_est
 
@@ -127,10 +143,16 @@ class PegInHoleScenario(Scenario):
             print("Force feedback overlay: ON")
             print(f"  Visual mode: {env.force_visual}")
             print("  Green sphere above hand = waiting for contact.")
-            print("  Red/orange arrow and/or contact ring scale with force.")
+            print("  Red/orange arrow starts at the strongest contact and points along force-on-peg.")
+            print("  Red/orange contact ring is centered on the strongest contact surface.")
             print("  (Run with --force-feedback; HUD also shows force in newtons)")
         else:
             print("Force feedback overlay: OFF")
+        if env.contact_cushion:
+            print("Experimental impedance cushion: ON")
+            print(f"  Activates above {env.cushion_threshold:.1f} N, releases below {env.cushion_release_threshold:.1f} N")
+        else:
+            print("Experimental impedance cushion: OFF")
         print()
 
     def start_interactive(self, env):
@@ -392,6 +414,12 @@ class PegInHoleScenario(Scenario):
             target_roll = env.target_roll
             gripper_closed = env.gripper_closed
 
+        env.data.qfrc_applied[:7] = 0.0
+        if env.contact_cushion and env.interactive and self._update_cushion_state(env):
+            self._apply_impedance_control(env, target_pos, target_roll, gripper_closed)
+            return
+
+        env.impedance_tau_norm = 0.0
         if env.interactive:
             q_des = self._solve_peg_ik(env, target_pos, target_roll)
         else:
@@ -401,18 +429,71 @@ class PegInHoleScenario(Scenario):
             env.data.ctrl[i] = q_des[i]
         env.data.ctrl[7] = 255.0 if gripper_closed else 0.0
 
+    def _update_cushion_state(self, env):
+        force_magnitude = max(env.latest_contact_force, env.latest_f_true, env.latest_f_est)
+        if env.cushion_active:
+            env.cushion_active = force_magnitude >= env.cushion_release_threshold
+        else:
+            env.cushion_active = force_magnitude >= env.cushion_threshold
+
+        if env.cushion_active:
+            env.cushion_scale = max(0.05, self._force_visual_intensity(force_magnitude))
+        else:
+            env.cushion_scale = 0.0
+            env.impedance_tau_norm = 0.0
+
+        return env.cushion_active
+
+    def _apply_impedance_control(self, env, target_pos, target_roll, gripper_closed):
+        """Experimental contact cushion: soft Cartesian spring/damper around the teleop target."""
+        for i in range(7):
+            env.data.ctrl[i] = env.data.qpos[i]
+        env.data.ctrl[7] = 255.0 if gripper_closed else 0.0
+
+        hand_pos = env.data.xpos[env.hand_body_id].copy()
+        current_rot = env.data.xmat[env.hand_body_id].reshape(3, 3).copy()
+        target_rot = self._target_hand_rotmat(env, target_roll)
+
+        jac_p = np.zeros((3, env.model.nv))
+        jac_r = np.zeros((3, env.model.nv))
+        mujoco.mj_jac(env.model, env.data, jac_p, jac_r, hand_pos, env.hand_body_id)
+        j_arm = np.vstack([jac_p[:, :7], jac_r[:, :7]])
+        qvel_arm = env.data.qvel[:7]
+
+        pos_err = target_pos - hand_pos
+        ori_err = self._orientation_error(current_rot, target_rot)
+        lin_vel = jac_p[:, :7] @ qvel_arm
+        ang_vel = jac_r[:, :7] @ qvel_arm
+
+        linear_force = env.impedance_kp * pos_err - env.impedance_dp * lin_vel
+        angular_torque = env.impedance_kr * ori_err - env.impedance_dr * ang_vel
+        wrench = np.concatenate([linear_force, angular_torque])
+
+        tau = j_arm.T @ wrench
+        tau = np.nan_to_num(
+            tau,
+            nan=0.0,
+            posinf=env.impedance_torque_limit,
+            neginf=-env.impedance_torque_limit,
+        )
+        tau = np.clip(tau, -env.impedance_torque_limit, env.impedance_torque_limit)
+        env.data.qfrc_applied[:7] = tau
+        env.impedance_tau_norm = float(np.linalg.norm(tau))
+
     def _peg_contact_summary(self, env):
         force_world = np.zeros(3)
         strongest_force = 0.0
         strongest_pos = None
         strongest_frame = None
+        strongest_force_vector = np.zeros(3)
+        strongest_arrow_vector = np.zeros(3)
 
         for i in range(env.data.ncon):
             contact = env.data.contact[i]
             if contact.geom1 != env.peg_geom_id and contact.geom2 != env.peg_geom_id:
                 continue
 
-            contact_force = env._contact_force_in_world(i)
+            contact_force, normal_force = self._contact_force_vectors_on_peg(env, contact, i)
             contact_force_mag = float(np.linalg.norm(contact_force))
             force_world += contact_force
 
@@ -420,6 +501,8 @@ class PegInHoleScenario(Scenario):
                 strongest_force = contact_force_mag
                 strongest_pos = contact.pos.copy()
                 strongest_frame = contact.frame.reshape(3, 3).copy()
+                strongest_force_vector = contact_force.copy()
+                strongest_arrow_vector = self._visual_contact_force_vector(contact_force, normal_force)
 
         return (
             strongest_pos is not None,
@@ -427,7 +510,74 @@ class PegInHoleScenario(Scenario):
             strongest_pos,
             strongest_frame,
             strongest_force,
+            strongest_force_vector,
+            strongest_arrow_vector,
         )
+
+    def _contact_force_vectors_on_peg(self, env, contact, contact_idx):
+        """Return full and normal-only contact force vectors with a consistent peg sign."""
+        c_forces = np.zeros(6)
+        mujoco.mj_contactForce(env.model, env.data, contact_idx, c_forces)
+        frame = contact.frame.reshape(3, 3)
+        full_force = frame.T @ c_forces[:3]
+        normal_force = frame.T @ np.array([c_forces[0], 0.0, 0.0])
+
+        if contact.geom2 == env.peg_geom_id:
+            return full_force, normal_force
+        return -full_force, -normal_force
+
+    def _visual_contact_force_vector(self, full_force, normal_force):
+        """Use stable normal reaction for visual direction, preserving full-force magnitude for size."""
+        full_mag = float(np.linalg.norm(full_force))
+        normal_mag = float(np.linalg.norm(normal_force))
+        if full_mag < 1e-9:
+            return np.zeros(3)
+        if normal_mag < 1e-9:
+            return full_force
+        return normal_force / normal_mag * full_mag
+
+    def _update_contact_arrow_visual(self, env, in_contact, contact_pos, contact_force, arrow_vector):
+        if not in_contact or contact_pos is None or contact_force <= self.force_visual_threshold:
+            env._smoothed_contact_arrow_pos = None
+            env._smoothed_contact_arrow_vector = np.zeros(3)
+            env._smoothed_contact_arrow_force = 0.0
+            env.latest_contact_arrow_pos = None
+            env.latest_contact_arrow_vector = np.zeros(3)
+            env.latest_contact_arrow_force = 0.0
+            return
+
+        contact_pos = np.asarray(contact_pos, dtype=np.float64)
+        arrow_vector = np.asarray(arrow_vector, dtype=np.float64)
+        if np.linalg.norm(arrow_vector) < 1e-9:
+            arrow_vector = np.asarray(env.latest_contact_force_vector, dtype=np.float64)
+
+        reset = env._smoothed_contact_arrow_pos is None
+        if not reset:
+            jump = np.linalg.norm(contact_pos - env._smoothed_contact_arrow_pos)
+            reset = jump > env._contact_arrow_reset_distance
+
+        if reset:
+            env._smoothed_contact_arrow_pos = contact_pos.copy()
+            env._smoothed_contact_arrow_vector = arrow_vector.copy()
+            env._smoothed_contact_arrow_force = contact_force
+        else:
+            alpha = env._contact_arrow_smoothing
+            prev_vector = env._smoothed_contact_arrow_vector
+            if np.dot(prev_vector, arrow_vector) < 0.0:
+                arrow_vector = -arrow_vector
+            env._smoothed_contact_arrow_pos = (
+                (1.0 - alpha) * env._smoothed_contact_arrow_pos + alpha * contact_pos
+            )
+            env._smoothed_contact_arrow_vector = (
+                (1.0 - alpha) * prev_vector + alpha * arrow_vector
+            )
+            env._smoothed_contact_arrow_force = (
+                (1.0 - alpha) * env._smoothed_contact_arrow_force + alpha * contact_force
+            )
+
+        env.latest_contact_arrow_pos = env._smoothed_contact_arrow_pos.copy()
+        env.latest_contact_arrow_vector = env._smoothed_contact_arrow_vector.copy()
+        env.latest_contact_arrow_force = float(env._smoothed_contact_arrow_force)
 
     def _sync_target_marker(self, env):
         with env._teleop_lock:
@@ -557,6 +707,14 @@ class PegInHoleScenario(Scenario):
                 + (" (contact)" if env.latest_in_contact else " (no contact yet)")
                 + f" | visual {env.force_visual}"
             )
+        if env.contact_cushion:
+            cushion_state = "ON" if env.cushion_active else "idle"
+            cushion_line = (
+                f"cushion {cushion_state}"
+                f" @{env.cushion_threshold:.0f}N"
+                f" scale {env.cushion_scale:.2f}"
+            )
+            force_line = f"{force_line} | {cushion_line}" if force_line else cushion_line
         viewer.set_texts([
             (
                 mujoco.mjtFontScale.mjFONTSCALE_150,
@@ -589,25 +747,23 @@ class PegInHoleScenario(Scenario):
         viewer.user_scn.ngeom = 0
         idx = 0
 
-        idx = self._draw_idle_marker(env, viewer, idx, hand_pos, identity, f_display)
+        if f_display <= self.force_visual_threshold:
+            idx = self._draw_idle_marker(env, viewer, idx, hand_pos, identity)
 
         if f_display > self.force_visual_threshold:
             if env.force_visual in ("arrow", "both"):
-                idx = self._draw_force_arrow(viewer, idx, hand_pos, identity, f_display)
+                idx = self._draw_force_arrow(env, viewer, idx, identity)
             if env.force_visual in ("ring", "both"):
                 idx = self._draw_contact_ring(env, viewer, idx, identity)
 
         viewer.user_scn.ngeom = idx
 
-    def _draw_idle_marker(self, env, viewer, idx, hand_pos, identity, f_display):
+    def _draw_idle_marker(self, env, viewer, idx, hand_pos, identity):
         if not self._has_user_geom_slot(viewer, idx):
             return idx
 
         base_pos = self._force_gauge_origin(hand_pos).reshape(3, 1)
-        if f_display <= self.force_visual_threshold:
-            base_rgba = np.array([0.25, 0.85, 0.35, 0.9], dtype=np.float32).reshape(4, 1)
-        else:
-            base_rgba = np.array([1.0, 0.20, 0.05, 0.9], dtype=np.float32).reshape(4, 1)
+        base_rgba = np.array([0.25, 0.85, 0.35, 0.9], dtype=np.float32).reshape(4, 1)
 
         self._set_user_geom(
             viewer.user_scn.geoms[idx],
@@ -619,15 +775,27 @@ class PegInHoleScenario(Scenario):
         )
         return idx + 1
 
-    def _draw_force_arrow(self, viewer, idx, hand_pos, identity, force_magnitude):
-        if not self._has_user_geom_slot(viewer, idx):
+    def _draw_force_arrow(self, env, viewer, idx, identity):
+        if env.latest_contact_arrow_pos is None or not self._has_user_geom_slot(viewer, idx):
+            return idx
+
+        force_vector = np.asarray(env.latest_contact_arrow_vector, dtype=np.float64)
+        force_magnitude = max(float(np.linalg.norm(force_vector)), env.latest_contact_arrow_force)
+        if force_magnitude <= self.force_visual_threshold:
             return idx
 
         intensity = self._force_visual_intensity(force_magnitude)
-        arrow_len = 0.06 + intensity * 0.42
-        shaft_width = 0.012 + intensity * 0.018
-        p1 = self._force_gauge_origin(hand_pos)
-        p2 = p1 + np.array([0.0, 0.0, arrow_len])
+        arrow_len = 0.045 + intensity * 0.235
+        shaft_width = 0.0045 + intensity * 0.012
+        fallback = np.array([0.0, 0.0, 1.0])
+        if env.latest_contact_frame is not None:
+            fallback = env.latest_contact_frame[0]
+        direction = self._unit_vector(force_vector, fallback)
+
+        contact_pos = np.asarray(env.latest_contact_arrow_pos, dtype=np.float64)
+        visible_tail = 0.012 + intensity * 0.018
+        p1 = contact_pos - direction * visible_tail
+        p2 = contact_pos + direction * arrow_len
         color = self._force_color(intensity)
         zero3 = np.zeros((3, 1), dtype=np.float64)
 
