@@ -8,6 +8,8 @@ from franka_force.config import (
     DEFAULT_IMPEDANCE_KP,
     DEFAULT_IMPEDANCE_KR,
     DEFAULT_IMPEDANCE_TORQUE_LIMIT,
+    DEFAULT_PEG_ALPHA,
+    DEFAULT_SOCKET_ALPHA,
 )
 
 
@@ -81,6 +83,18 @@ def parse_args():
         default=DEFAULT_IMPEDANCE_TORQUE_LIMIT,
         help="Per-joint torque clamp for --contact-cushion",
     )
+    parser.add_argument(
+        "--peg-alpha",
+        type=float,
+        default=DEFAULT_PEG_ALPHA,
+        help="Peg opacity for peg_in_hole, from 0.0 transparent to 1.0 opaque",
+    )
+    parser.add_argument(
+        "--socket-alpha",
+        type=float,
+        default=DEFAULT_SOCKET_ALPHA,
+        help="Socket wall opacity for peg_in_hole, from 0.0 transparent to 1.0 opaque",
+    )
     return parser.parse_args()
 
 
@@ -101,5 +115,7 @@ if __name__ == "__main__":
         impedance_kr=args.impedance_kr,
         impedance_dr=args.impedance_dr,
         impedance_torque_limit=args.impedance_torque_limit,
+        peg_alpha=args.peg_alpha,
+        socket_alpha=args.socket_alpha,
     )
     env.run()

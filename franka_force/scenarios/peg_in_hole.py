@@ -17,7 +17,7 @@ class PegInHoleScenario(Scenario):
     force_visual_min = 10.0
     force_visual_threshold = force_visual_min
     force_visual_max = 1000.0
-    force_arrow_offset = np.array([0.0, -0.12, 0.14])
+    idle_marker_offset = np.array([0.0, -0.12, 0.14])
 
     def initialize_state(self, env):
         env.target_pos = np.zeros(3)
@@ -45,7 +45,7 @@ class PegInHoleScenario(Scenario):
             type=mujoco.mjtGeom.mjGEOM_CYLINDER,
             size=[0.012, 0.05],
             pos=[0, 0, 0.10],
-            rgba=[0.8, 0.8, 0.8, 1],
+            rgba=[0.8, 0.8, 0.8, env.peg_alpha],
             mass=0.2,
             condim=3,
         )
@@ -55,30 +55,31 @@ class PegInHoleScenario(Scenario):
         wall_len = 0.05
         wall_height = 0.04
         hole_gap = 0.016
+        socket_rgba = [0.4, 0.4, 0.4, env.socket_alpha]
 
         socket_base.add_geom(
             type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[wall_thick, wall_len, wall_height],
             pos=[-hole_gap - wall_thick, 0, wall_height],
-            rgba=[0.4, 0.4, 0.4, 1],
+            rgba=socket_rgba,
         )
         socket_base.add_geom(
             type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[wall_thick, wall_len, wall_height],
             pos=[hole_gap + wall_thick, 0, wall_height],
-            rgba=[0.4, 0.4, 0.4, 1],
+            rgba=socket_rgba,
         )
         socket_base.add_geom(
             type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[wall_len, wall_thick, wall_height],
             pos=[0, -hole_gap - wall_thick, wall_height],
-            rgba=[0.4, 0.4, 0.4, 1],
+            rgba=socket_rgba,
         )
         socket_base.add_geom(
             type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[wall_len, wall_thick, wall_height],
             pos=[0, hole_gap + wall_thick, wall_height],
-            rgba=[0.4, 0.4, 0.4, 1],
+            rgba=socket_rgba,
         )
 
         ik_target = spec.worldbody.add_body(name="ik_target", mocap=True)
@@ -793,8 +794,7 @@ class PegInHoleScenario(Scenario):
         direction = self._unit_vector(force_vector, fallback)
 
         contact_pos = np.asarray(env.latest_contact_arrow_pos, dtype=np.float64)
-        visible_tail = 0.012 + intensity * 0.018
-        p1 = contact_pos - direction * visible_tail
+        p1 = contact_pos
         p2 = contact_pos + direction * arrow_len
         color = self._force_color(intensity)
         zero3 = np.zeros((3, 1), dtype=np.float64)
@@ -850,7 +850,7 @@ class PegInHoleScenario(Scenario):
         return float(np.clip((log_force - log_min) / (log_max - log_min), 0.0, 1.0))
 
     def _force_gauge_origin(self, hand_pos):
-        return hand_pos + self.force_arrow_offset
+        return hand_pos + self.idle_marker_offset
 
     def _force_color(self, intensity):
         green = 0.35 * (1.0 - intensity)

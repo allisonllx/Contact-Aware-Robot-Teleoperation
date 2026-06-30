@@ -11,6 +11,8 @@ from .config import (
     DEFAULT_IMPEDANCE_KP,
     DEFAULT_IMPEDANCE_KR,
     DEFAULT_IMPEDANCE_TORQUE_LIMIT,
+    DEFAULT_PEG_ALPHA,
+    DEFAULT_SOCKET_ALPHA,
     FORCE_VISUAL_MODES,
     MODEL_PATH,
     RESULTS_DIR,
@@ -35,6 +37,8 @@ class FrankaForceEnv:
         impedance_kr=DEFAULT_IMPEDANCE_KR,
         impedance_dr=DEFAULT_IMPEDANCE_DR,
         impedance_torque_limit=DEFAULT_IMPEDANCE_TORQUE_LIMIT,
+        peg_alpha=DEFAULT_PEG_ALPHA,
+        socket_alpha=DEFAULT_SOCKET_ALPHA,
     ):
         if scenario not in SCENARIOS:
             raise ValueError(f"Unknown scenario: {scenario}. Choose from {SCENARIOS}")
@@ -54,6 +58,8 @@ class FrankaForceEnv:
         self.impedance_kr = impedance_kr
         self.impedance_dr = impedance_dr
         self.impedance_torque_limit = impedance_torque_limit
+        self.peg_alpha = peg_alpha
+        self.socket_alpha = socket_alpha
 
         if force_feedback and not interactive:
             raise ValueError("force_feedback requires interactive=True")
@@ -67,6 +73,10 @@ class FrankaForceEnv:
             raise ValueError("impedance gains and damping values must be non-negative")
         if impedance_torque_limit <= 0.0:
             raise ValueError("impedance_torque_limit must be positive")
+        if not 0.0 <= peg_alpha <= 1.0:
+            raise ValueError("peg_alpha must be between 0.0 and 1.0")
+        if not 0.0 <= socket_alpha <= 1.0:
+            raise ValueError("socket_alpha must be between 0.0 and 1.0")
 
         self.results_dir = RESULTS_DIR / scenario
         self.results_dir.mkdir(parents=True, exist_ok=True)
