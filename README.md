@@ -28,13 +28,13 @@ On macOS, MuJoCo viewer workflows that use the passive viewer, including interac
 
 ## Usage
 
-Run the default scenario:
+Run the **default scenario**:
 
 ```bash
 python3 main.py
 ```
 
-Run a specific scenario:
+Run a **specific scenario**:
 
 ```bash
 python3 main.py --scenario push_block
@@ -42,19 +42,19 @@ python3 main.py --scenario hit_floor
 python3 main.py --scenario peg_in_hole
 ```
 
-Run the interactive peg-in-hole task:
+Run the **interactive peg-in-hole task**:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive
 ```
 
-Enable live force feedback during interactive peg insertion:
+Enable **live force feedback** during interactive peg insertion:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive --force-feedback
 ```
 
-Choose the force-feedback visual:
+Choose the **force-feedback visual**:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual arrow
@@ -64,13 +64,13 @@ mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-v
 
 `arrow` draws a red/orange vector at the strongest peg contact point, pointing in the world-space force direction applied to the peg. `ring` draws a red/orange ring at the strongest contact surface, and `both` draws both overlays. The size of each overlay uses a log scale from roughly `10 N` to `1000 N`, so mid-range forces remain visually distinguishable without huge spikes dominating the view.
 
-Make the peg and socket walls semi-transparent when inspecting internal contacts:
+Make the **peg and socket walls semi-transparent** when inspecting internal contacts:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual both --peg-alpha 0.45 --socket-alpha 0.45
 ```
 
-Enable the experimental impedance cushion during interactive peg insertion:
+Enable the **experimental impedance cushion** during interactive peg insertion:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual both --contact-cushion
@@ -78,7 +78,7 @@ mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-v
 
 The cushion activates after contact force crosses `--cushion-threshold` (`100 N` by default). While active, the arm position servos are commanded to the current joint positions to cancel the servo spring, and a torque-limited Cartesian spring/damper is applied through `J.T @ wrench`. You can tune it with `--impedance-kp`, `--impedance-dp`, `--impedance-kr`, `--impedance-dr`, and `--impedance-torque-limit`.
 
-Record a video of a run:
+Record a **video** of a run:
 
 ```bash
 mjpython main.py --scenario push_block --record-video
