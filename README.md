@@ -74,6 +74,16 @@ Make the **peg and socket walls semi-transparent** when inspecting internal cont
 mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual both --peg-alpha 0.45 --socket-alpha 0.45
 ```
 
+Run the **occluded peg-in-hole experiment**:
+
+```bash
+mjpython main.py --scenario peg_in_hole --interactive --occluded-task --force-feedback --force-visual both --peg-alpha 0.45 --socket-alpha 0.45
+```
+
+`--occluded-task` adds an opaque visual-only wall in front of a slightly deeper, off-center socket, plus a hidden collision pad at the bottom of the hole. The wall is wider than the socket footprint and offset from the hole center, so its visual midpoint is not a reliable alignment cue. The wall blocks the user's line of sight without affecting physics. The hidden pad detects successful insertion; after sustained peg-pad contact, the run prints a success message, updates the HUD, records a final frame when video recording is enabled, and exits cleanly. This success-stop behavior works with plain `--record-video`; `--record-force-feedback` only controls whether force overlay geoms appear in the saved MP4.
+
+When the occluded task starts, the live viewer camera is initialized to a wider front-on, near eye-level view that includes the starting peg and obstacle. Video recording uses a separate side/three-quarter observer camera for occluded trials, so the saved MP4 shows the obstacle, peg, and socket area rather than only the participant's blocked view.
+
 Enable the **experimental impedance cushion** during interactive peg insertion:
 
 ```bash
@@ -91,6 +101,8 @@ mjpython main.py --scenario peg_in_hole --interactive --record-video --record-fo
 ```
 
 `--record-force-feedback` includes the same visual feedback geoms in the saved video: the green idle marker before contact, plus the selected red/orange arrow, ring, or both during contact.
+
+Videos are encoded at `30 fps` against simulation time, so the saved MP4 duration should track the simulation timeline rather than how fast the viewer/render loop happened to run.
 
 Show CLI options:
 
@@ -125,7 +137,7 @@ franka_force/scenarios/         Scenario-specific model, control, and contact lo
 
 `FrankaForceEnv` delegates scenario-specific behavior through the scenario registry in `franka_force/scenarios/__init__.py`, so adding a new scenario should usually mean adding one scenario module and registering it there.
 
-The CSV files also include cushion state, cushion scale, impedance torque norm, and the strongest contact-force vector components.
+The CSV files also include cushion state, cushion scale, impedance torque norm, strongest contact-force vector components, and occluded-task success state when enabled.
 
 ## Control Experiments
 

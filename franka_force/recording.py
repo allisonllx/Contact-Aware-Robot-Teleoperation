@@ -2,21 +2,21 @@ from pathlib import Path
 
 import mujoco
 
-from .config import VIDEO_CAPTURE_EVERY, VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH
+from .config import VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH
 
 
 class VideoRecorder:
-    """Stream offscreen frames to mp4 (uses the same camera as the passive viewer)."""
+    """Stream offscreen frames to mp4 with the camera supplied by the environment."""
 
     def __init__(self, model, path, fps=VIDEO_FPS, width=VIDEO_WIDTH, height=VIDEO_HEIGHT):
         self.path = Path(path)
         self.fps = fps
-        self.capture_every = VIDEO_CAPTURE_EVERY
+        self.frame_interval = 1.0 / fps
         model.vis.global_.offwidth = max(model.vis.global_.offwidth, width)
         model.vis.global_.offheight = max(model.vis.global_.offheight, height)
         self.renderer = mujoco.Renderer(model, height, width)
         self._writer = None
-        self._frame_counter = 0
+        self._next_frame_time = None
         self._saved_frames = 0
 
     def start(self):
@@ -34,20 +34,30 @@ class VideoRecorder:
             macro_block_size=1,
         )
 
-    def capture(self, data, camera, overlay_callback=None):
+    def capture(self, data, camera, overlay_callback=None, force=False):
         if self._writer is None:
             return
 
-        self._frame_counter += 1
-        if (self._frame_counter - 1) % self.capture_every != 0:
+        current_time = float(data.time)
+        if self._next_frame_time is None:
+            self._next_frame_time = current_time
+        if not force and current_time + 1e-9 < self._next_frame_time:
             return
 
         self.renderer.update_scene(data, camera=camera)
         if overlay_callback is not None:
             overlay_callback(self.renderer.scene)
         frame = self.renderer.render()
-        self._writer.append_data(frame)
-        self._saved_frames += 1
+        frames_written = 0
+        while current_time + 1e-9 >= self._next_frame_time:
+            self._writer.append_data(frame)
+            self._saved_frames += 1
+            frames_written += 1
+            self._next_frame_time += self.frame_interval
+
+        if force and frames_written == 0:
+            self._writer.append_data(frame)
+            self._saved_frames += 1
 
     def close(self):
         if self._writer is None:
@@ -61,7 +71,8 @@ class VideoRecorder:
                 self.path.unlink()
             return
 
+        duration = self._saved_frames / self.fps
         print(
-            f"Saved run video ({self._saved_frames} frames @ {self.fps} fps) "
+            f"Saved run video ({self._saved_frames} frames, {duration:.2f}s @ {self.fps} fps) "
             f"to {self.path.resolve()}"
         )

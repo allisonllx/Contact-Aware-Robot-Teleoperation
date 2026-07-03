@@ -48,6 +48,11 @@ def parse_args():
         help="Include force feedback overlay geoms in --record-video output (peg_in_hole only)",
     )
     parser.add_argument(
+        "--occluded-task",
+        action="store_true",
+        help="Enable peg_in_hole visual-occlusion experiment with hidden success pad",
+    )
+    parser.add_argument(
         "--contact-cushion",
         action="store_true",
         help="Enable experimental impedance cushion (peg_in_hole + --interactive only)",
@@ -114,6 +119,7 @@ if __name__ == "__main__":
         force_visual=args.force_visual,
         record_video=args.record_video,
         record_force_feedback=args.record_force_feedback,
+        occluded_task=args.occluded_task,
         contact_cushion=args.contact_cushion,
         cushion_threshold=args.cushion_threshold,
         impedance_kp=args.impedance_kp,

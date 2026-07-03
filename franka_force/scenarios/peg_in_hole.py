@@ -18,6 +18,20 @@ class PegInHoleScenario(Scenario):
     force_visual_threshold = force_visual_min
     force_visual_max = 1000.0
     idle_marker_offset = np.array([0.0, -0.12, 0.14])
+    socket_origin = np.array([0.50, 0.0, 0.0])
+    socket_wall_thick = 0.015
+    socket_wall_len = 0.05
+    socket_wall_height = 0.04
+    socket_hole_gap = 0.016
+    occluder_thick = 0.006
+    occluder_gap = 0.015
+    occluder_extra_gap = 0.020
+    occluder_extra_height = 0.04
+    occluder_width_scale = 1.35
+    occluder_x_offset = 0.025
+    occluded_socket_offset = np.array([0.0, 0.025, 0.0])
+    success_pad_thickness = 0.001
+    success_hold_required = 0.15
 
     def initialize_state(self, env):
         env.target_pos = np.zeros(3)
@@ -37,6 +51,8 @@ class PegInHoleScenario(Scenario):
         env._smoothed_contact_arrow_force = 0.0
         env._contact_arrow_smoothing = 0.28
         env._contact_arrow_reset_distance = 0.018
+        env._occluded_success_announced = False
+        env._occluded_recording_camera = None
 
     def augment_model_spec(self, env, spec):
         hand_body = spec.body("hand")
@@ -50,11 +66,11 @@ class PegInHoleScenario(Scenario):
             condim=3,
         )
 
-        socket_base = spec.worldbody.add_body(name="socket", pos=[0.50, 0.0, 0.0])
-        wall_thick = 0.015
-        wall_len = 0.05
-        wall_height = 0.04
-        hole_gap = 0.016
+        socket_base = spec.worldbody.add_body(name="socket", pos=list(self._socket_origin(env)))
+        wall_thick = self.socket_wall_thick
+        wall_len = self.socket_wall_len
+        wall_height = self.socket_wall_height
+        hole_gap = self.socket_hole_gap
         socket_rgba = [0.4, 0.4, 0.4, env.socket_alpha]
 
         socket_base.add_geom(
@@ -82,6 +98,9 @@ class PegInHoleScenario(Scenario):
             rgba=socket_rgba,
         )
 
+        if env.occluded_task:
+            self._add_occluded_task_geoms(socket_base)
+
         ik_target = spec.worldbody.add_body(name="ik_target", mocap=True)
         ik_target.add_geom(
             name="ik_target_geom",
@@ -94,10 +113,53 @@ class PegInHoleScenario(Scenario):
 
         self._add_floor_compass(spec, origin=[0.38, 0.0, 0.0])
 
+    def _add_occluded_task_geoms(self, socket_base):
+        wall_top = self.socket_wall_height * 2.0
+        occluder_height = wall_top + self.occluder_extra_height
+        occluder_y = (
+            -self.socket_wall_len
+            - self.occluder_gap
+            - self.occluder_extra_gap
+            - self.occluder_thick
+        )
+        socket_base.add_geom(
+            name="occlusion_wall_geom",
+            type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[
+                self.socket_wall_len * self.occluder_width_scale,
+                self.occluder_thick,
+                occluder_height / 2.0,
+            ],
+            pos=[self.occluder_x_offset, occluder_y, occluder_height / 2.0],
+            rgba=[0.08, 0.08, 0.08, 1.0],
+            contype=0,
+            conaffinity=0,
+        )
+        socket_base.add_geom(
+            name="peg_success_pad_geom",
+            type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[
+                self.socket_hole_gap * 0.75,
+                self.socket_hole_gap * 0.75,
+                self.success_pad_thickness,
+            ],
+            pos=[0.0, 0.0, self.success_pad_thickness],
+            rgba=[0.05, 0.85, 0.20, 0.0],
+            contype=1,
+            conaffinity=1,
+            condim=3,
+        )
+
     def resolve_ids(self, env):
         env.peg_geom_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_GEOM, "peg_geom")
         env.ik_target_body_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_BODY, "ik_target")
         env.ik_target_mocap_id = env.model.body_mocapid[env.ik_target_body_id]
+        env.occlusion_wall_geom_id = mujoco.mj_name2id(
+            env.model, mujoco.mjtObj.mjOBJ_GEOM, "occlusion_wall_geom",
+        )
+        env.success_pad_geom_id = mujoco.mj_name2id(
+            env.model, mujoco.mjtObj.mjOBJ_GEOM, "peg_success_pad_geom",
+        )
 
     def after_model_init(self, env):
         if env.interactive:
@@ -157,6 +219,11 @@ class PegInHoleScenario(Scenario):
             print(f"  Activates above {env.cushion_threshold:.1f} N, releases below {env.cushion_release_threshold:.1f} N")
         else:
             print("Experimental impedance cushion: OFF")
+        if env.occluded_task:
+            print("Occluded task: ON")
+            print("  Wider opaque front wall hides an off-center socket and hidden success pad.")
+            print("  Live camera starts wide front-on; recordings use a side observer camera.")
+            print(f"  Success requires {self.success_hold_required:.2f}s of sustained peg-pad contact.")
         print()
 
     def start_interactive(self, env):
@@ -164,6 +231,30 @@ class PegInHoleScenario(Scenario):
 
     def stop_interactive(self, env):
         self._stop_pynput_teleop(env)
+
+    def configure_viewer_camera(self, env, camera):
+        if env.occluded_task:
+            self._set_free_camera(
+                camera,
+                lookat=self._socket_origin(env) + np.array([0.055, -0.02, 0.18]),
+                distance=0.56,
+                azimuth=90.0,
+                elevation=-3.0,
+            )
+
+    def recording_camera(self, env, viewer_camera):
+        if not env.occluded_task:
+            return viewer_camera
+        if env._occluded_recording_camera is None:
+            env._occluded_recording_camera = mujoco.MjvCamera()
+            self._set_free_camera(
+                env._occluded_recording_camera,
+                lookat=self._socket_origin(env) + np.array([0.0, -0.005, 0.07]),
+                distance=0.52,
+                azimuth=135.0,
+                elevation=-25.0,
+            )
+        return env._occluded_recording_camera
 
     def viewer_key_callback(self, env, keycode):
         """Nudge the IK target from the MuJoCo window (one step per key press)."""
@@ -200,12 +291,28 @@ class PegInHoleScenario(Scenario):
         self._apply_teleop_motion(env, dt)
         self._sync_target_marker(env)
 
+    def after_step(self, env, dt):
+        self._update_occluded_success(env, dt)
+
     def update_interactive_viewer(self, env, viewer):
         self._draw_force_feedback(env, viewer.user_scn, clear=True)
         self._update_peg_hud(env, viewer)
 
     def update_recording_scene(self, env, scene):
         self._draw_force_feedback(env, scene, clear=False)
+
+    def _socket_origin(self, env):
+        if env.occluded_task:
+            return self.socket_origin + self.occluded_socket_offset
+        return self.socket_origin
+
+    def _set_free_camera(self, camera, lookat, distance, azimuth, elevation):
+        camera.type = mujoco.mjtCamera.mjCAMERA_FREE
+        camera.fixedcamid = -1
+        camera.lookat[:] = lookat
+        camera.distance = distance
+        camera.azimuth = azimuth
+        camera.elevation = elevation
 
     def _add_floor_compass(self, spec, origin):
         """World-frame N/E/S/W arrows on the floor (teleop uses world +X/+Y, not camera axes)."""
@@ -586,6 +693,42 @@ class PegInHoleScenario(Scenario):
         env.latest_contact_arrow_vector = env._smoothed_contact_arrow_vector.copy()
         env.latest_contact_arrow_force = float(env._smoothed_contact_arrow_force)
 
+    def _update_occluded_success(self, env, dt):
+        if not env.occluded_task or env.task_success:
+            return
+
+        success_contact = self._has_success_pad_contact(env)
+        self._update_success_state(env, success_contact, dt)
+
+        if env.task_success and not env._occluded_success_announced:
+            env._occluded_success_announced = True
+            print(
+                f"Occluded peg-in-hole SUCCESS at t={env.data.time:.3f}s "
+                f"after {env.success_hold_time:.2f}s of hidden pad contact."
+            )
+
+    def _has_success_pad_contact(self, env):
+        if env.success_pad_geom_id < 0:
+            return False
+
+        for i in range(env.data.ncon):
+            contact = env.data.contact[i]
+            geoms = {contact.geom1, contact.geom2}
+            if env.peg_geom_id in geoms and env.success_pad_geom_id in geoms:
+                return True
+        return False
+
+    def _update_success_state(self, env, success_contact, dt):
+        env.success_contact = success_contact
+        if success_contact:
+            env.success_hold_time += dt
+        else:
+            env.success_hold_time = 0.0
+
+        if env.success_hold_time >= self.success_hold_required:
+            env.task_success = True
+            env.task_stop_requested = True
+
     def _sync_target_marker(self, env):
         with env._teleop_lock:
             target = env.target_pos.copy()
@@ -722,6 +865,16 @@ class PegInHoleScenario(Scenario):
                 f" scale {env.cushion_scale:.2f}"
             )
             force_line = f"{force_line} | {cushion_line}" if force_line else cushion_line
+        if env.occluded_task:
+            if env.task_success:
+                success_line = "occluded SUCCESS"
+            else:
+                contact_state = "contact" if env.success_contact else "seeking"
+                success_line = (
+                    f"occluded {contact_state}"
+                    f" {env.success_hold_time:.2f}/{self.success_hold_required:.2f}s"
+                )
+            force_line = f"{force_line} | {success_line}" if force_line else success_line
         viewer.set_texts([
             (
                 mujoco.mjtFontScale.mjFONTSCALE_150,

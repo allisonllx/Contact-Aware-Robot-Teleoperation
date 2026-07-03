@@ -23,6 +23,9 @@ def plot_force_comparison(env):
     cushion_scale = _history_array(env, "cushion_scale_history", len(t), dtype=float)
     impedance_tau_norm = _history_array(env, "impedance_tau_norm_history", len(t), dtype=float)
     contact_force_vectors = _contact_vector_history(env, len(t))
+    task_success = _history_array(env, "task_success_history", len(t), dtype=bool)
+    success_contact = _history_array(env, "success_contact_history", len(t), dtype=bool)
+    success_hold_time = _history_array(env, "success_hold_time_history", len(t), dtype=float)
 
     _write_filtered_csv(
         env.telemetry_filtered_path,
@@ -35,6 +38,9 @@ def plot_force_comparison(env):
         cushion_scale,
         impedance_tau_norm,
         contact_force_vectors,
+        task_success,
+        success_contact,
+        success_hold_time,
     )
 
     _save_plot(
@@ -113,6 +119,9 @@ def _write_filtered_csv(
     cushion_scale,
     impedance_tau_norm,
     contact_force_vectors,
+    task_success,
+    success_contact,
+    success_hold_time,
 ):
     with open(path, mode="w", newline="") as f:
         writer = csv.writer(f)
@@ -127,6 +136,9 @@ def _write_filtered_csv(
             "Contact Force X (N)",
             "Contact Force Y (N)",
             "Contact Force Z (N)",
+            "Task Success",
+            "Success Contact",
+            "Success Hold Time",
         ])
         for i in np.where(is_clean)[0]:
             writer.writerow([
@@ -140,6 +152,9 @@ def _write_filtered_csv(
                 contact_force_vectors[i, 0],
                 contact_force_vectors[i, 1],
                 contact_force_vectors[i, 2],
+                int(task_success[i]),
+                int(success_contact[i]),
+                success_hold_time[i],
             ])
     print(f"Saved filtered CSV to {path.resolve()}")
 

@@ -31,6 +31,7 @@ class FrankaForceEnv:
         force_visual="arrow",
         record_video=False,
         record_force_feedback=False,
+        occluded_task=False,
         contact_cushion=False,
         cushion_threshold=DEFAULT_CUSHION_THRESHOLD,
         impedance_kp=DEFAULT_IMPEDANCE_KP,
@@ -53,6 +54,7 @@ class FrankaForceEnv:
         self.force_visual = force_visual
         self.record_video = record_video
         self.record_force_feedback = record_force_feedback
+        self.occluded_task = occluded_task
         self.contact_cushion = contact_cushion
         self.cushion_threshold = cushion_threshold
         self.impedance_kp = impedance_kp
@@ -69,6 +71,8 @@ class FrankaForceEnv:
             raise ValueError("record_force_feedback requires record_video=True")
         if record_force_feedback and scenario != "peg_in_hole":
             raise ValueError("record_force_feedback is only supported for peg_in_hole")
+        if occluded_task and (scenario != "peg_in_hole" or not interactive):
+            raise ValueError("occluded_task requires scenario='peg_in_hole' and interactive=True")
         if interactive and not self.scenario_impl.supports_interactive:
             raise ValueError("interactive mode is only supported for peg_in_hole")
         if contact_cushion and (scenario != "peg_in_hole" or not interactive):
@@ -110,9 +114,16 @@ class FrankaForceEnv:
         self.cushion_scale_history = []
         self.impedance_tau_norm_history = []
         self.contact_force_vector_history = []
+        self.task_success_history = []
+        self.success_contact_history = []
+        self.success_hold_time_history = []
 
         self.step_counter = 0
         self.downsample_factor = 10
+        self.task_stop_requested = False
+        self.task_success = False
+        self.success_contact = False
+        self.success_hold_time = 0.0
         self.latest_f_est = 0.0
         self.latest_f_true = 0.0
         self.latest_in_contact = False
@@ -144,6 +155,9 @@ class FrankaForceEnv:
             "Contact Force X (N)",
             "Contact Force Y (N)",
             "Contact Force Z (N)",
+            "Task Success",
+            "Success Contact",
+            "Success Hold Time",
         ])
 
         self.model = self._build_model()
@@ -228,9 +242,9 @@ class FrankaForceEnv:
         ratio = f_true / max(f_est, 1e-9)
         return ratio > self.anomaly_ratio_high or ratio < self.anomaly_ratio_low
 
-    def _record_telemetry(self):
+    def _record_telemetry(self, force=False):
         """Sample ground-truth and estimated forces."""
-        if self.step_counter % self.downsample_factor == 0:
+        if force or self.step_counter % self.downsample_factor == 0:
             in_contact, f_true, f_est = self._sample_forces()
             is_anomaly = self._is_anomaly(f_true, f_est, in_contact)
 
@@ -244,6 +258,9 @@ class FrankaForceEnv:
             self.impedance_tau_norm_history.append(self.impedance_tau_norm)
             contact_force_vector = np.asarray(self.latest_contact_force_vector, dtype=float).copy()
             self.contact_force_vector_history.append(contact_force_vector)
+            self.task_success_history.append(self.task_success)
+            self.success_contact_history.append(self.success_contact)
+            self.success_hold_time_history.append(self.success_hold_time)
 
             self.log_writer.writerow([
                 self.data.time,
@@ -257,6 +274,9 @@ class FrankaForceEnv:
                 contact_force_vector[0],
                 contact_force_vector[1],
                 contact_force_vector[2],
+                int(self.task_success),
+                int(self.success_contact),
+                self.success_hold_time,
             ])
 
         self.step_counter += 1
@@ -304,16 +324,20 @@ class FrankaForceEnv:
                 show_left_ui=False,
                 show_right_ui=False,
             ) as viewer:
+                self.scenario_impl.configure_viewer_camera(self, viewer.cam)
                 while viewer.is_running():
                     if interactive:
                         self.scenario_impl.before_interactive_step(self, self.model.opt.timestep)
 
                     for _ in range(substeps):
                         mujoco.mj_step(self.model, self.data)
+                        self.scenario_impl.after_step(self, self.model.opt.timestep)
+                        if self.task_stop_requested:
+                            break
 
                     if interactive or self.record_force_feedback:
                         self._update_live_force()
-                    self._record_telemetry()
+                    self._record_telemetry(force=self.task_stop_requested)
 
                     if interactive:
                         self.scenario_impl.update_interactive_viewer(self, viewer)
@@ -324,9 +348,16 @@ class FrankaForceEnv:
                             overlay_callback = (
                                 lambda scene: self.scenario_impl.update_recording_scene(self, scene)
                             )
-                        recorder.capture(self.data, viewer.cam, overlay_callback=overlay_callback)
+                        recorder.capture(
+                            self.data,
+                            self.scenario_impl.recording_camera(self, viewer.cam),
+                            overlay_callback=overlay_callback,
+                            force=self.task_stop_requested,
+                        )
 
                     viewer.sync()
+                    if self.task_stop_requested:
+                        break
         except RuntimeError as exc:
             if "mjpython" in str(exc).lower():
                 hint = (

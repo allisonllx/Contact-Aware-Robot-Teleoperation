@@ -29,10 +29,19 @@ class Scenario:
     def stop_interactive(self, env):
         pass
 
+    def configure_viewer_camera(self, env, camera):
+        pass
+
+    def recording_camera(self, env, viewer_camera):
+        return viewer_camera
+
     def viewer_key_callback(self, env, keycode):
         pass
 
     def before_interactive_step(self, env, dt):
+        pass
+
+    def after_step(self, env, dt):
         pass
 
     def update_interactive_viewer(self, env, viewer):
