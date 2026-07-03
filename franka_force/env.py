@@ -4,8 +4,15 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 
+from .audio import AudioFeedback
 from .config import (
+    AUDIO_MODES,
+    DEFAULT_AUDIO_CONTACT_THRESHOLD,
+    DEFAULT_AUDIO_LATERAL_MAX,
+    DEFAULT_AUDIO_LATERAL_THRESHOLD,
+    DEFAULT_AUDIO_VOLUME,
     DEFAULT_CUSHION_THRESHOLD,
+    DEFAULT_HOLE_CLEARANCE_MM,
     DEFAULT_IMPEDANCE_DP,
     DEFAULT_IMPEDANCE_DR,
     DEFAULT_IMPEDANCE_KP,
@@ -32,6 +39,13 @@ class FrankaForceEnv:
         record_video=False,
         record_force_feedback=False,
         occluded_task=False,
+        hole_clearance_mm=DEFAULT_HOLE_CLEARANCE_MM,
+        audio_feedback=False,
+        audio_mode="both",
+        audio_contact_threshold=DEFAULT_AUDIO_CONTACT_THRESHOLD,
+        audio_lateral_threshold=DEFAULT_AUDIO_LATERAL_THRESHOLD,
+        audio_lateral_max=DEFAULT_AUDIO_LATERAL_MAX,
+        audio_volume=DEFAULT_AUDIO_VOLUME,
         contact_cushion=False,
         cushion_threshold=DEFAULT_CUSHION_THRESHOLD,
         impedance_kp=DEFAULT_IMPEDANCE_KP,
@@ -46,6 +60,8 @@ class FrankaForceEnv:
             raise ValueError(f"Unknown scenario: {scenario}. Choose from {SCENARIOS}")
         if force_visual not in FORCE_VISUAL_MODES:
             raise ValueError(f"Unknown force visual: {force_visual}. Choose from {FORCE_VISUAL_MODES}")
+        if audio_mode not in AUDIO_MODES:
+            raise ValueError(f"Unknown audio mode: {audio_mode}. Choose from {AUDIO_MODES}")
 
         self.scenario = scenario
         self.scenario_impl = get_scenario(scenario)
@@ -55,6 +71,13 @@ class FrankaForceEnv:
         self.record_video = record_video
         self.record_force_feedback = record_force_feedback
         self.occluded_task = occluded_task
+        self.hole_clearance_mm = hole_clearance_mm
+        self.audio_feedback = audio_feedback
+        self.audio_mode = audio_mode
+        self.audio_contact_threshold = audio_contact_threshold
+        self.audio_lateral_threshold = audio_lateral_threshold
+        self.audio_lateral_max = audio_lateral_max
+        self.audio_volume = audio_volume
         self.contact_cushion = contact_cushion
         self.cushion_threshold = cushion_threshold
         self.impedance_kp = impedance_kp
@@ -73,10 +96,22 @@ class FrankaForceEnv:
             raise ValueError("record_force_feedback is only supported for peg_in_hole")
         if occluded_task and (scenario != "peg_in_hole" or not interactive):
             raise ValueError("occluded_task requires scenario='peg_in_hole' and interactive=True")
+        if audio_feedback and (scenario != "peg_in_hole" or not interactive):
+            raise ValueError("audio_feedback requires scenario='peg_in_hole' and interactive=True")
         if interactive and not self.scenario_impl.supports_interactive:
             raise ValueError("interactive mode is only supported for peg_in_hole")
         if contact_cushion and (scenario != "peg_in_hole" or not interactive):
             raise ValueError("contact_cushion requires scenario='peg_in_hole' and interactive=True")
+        if hole_clearance_mm <= 0.0:
+            raise ValueError("hole_clearance_mm must be positive")
+        if audio_contact_threshold <= 0.0:
+            raise ValueError("audio_contact_threshold must be positive")
+        if audio_lateral_threshold <= 0.0:
+            raise ValueError("audio_lateral_threshold must be positive")
+        if audio_lateral_max <= audio_lateral_threshold:
+            raise ValueError("audio_lateral_max must be greater than audio_lateral_threshold")
+        if not 0.0 <= audio_volume <= 1.0:
+            raise ValueError("audio_volume must be between 0.0 and 1.0")
         if cushion_threshold <= 0.0:
             raise ValueError("cushion_threshold must be positive")
         if impedance_kp < 0.0 or impedance_dp < 0.0 or impedance_kr < 0.0 or impedance_dr < 0.0:
@@ -117,6 +152,11 @@ class FrankaForceEnv:
         self.task_success_history = []
         self.success_contact_history = []
         self.success_hold_time_history = []
+        self.hole_clearance_history = []
+        self.audio_feedback_history = []
+        self.audio_contact_event_history = []
+        self.audio_tick_rate_history = []
+        self.audio_lateral_force_history = []
 
         self.step_counter = 0
         self.downsample_factor = 10
@@ -137,6 +177,19 @@ class FrankaForceEnv:
         self.cushion_active = False
         self.cushion_scale = 0.0
         self.impedance_tau_norm = 0.0
+        self.latest_audio_contact_event = False
+        self.audio_contact_event_since_sample = False
+        self.latest_audio_tick_rate = 0.0
+        self.latest_audio_lateral_force = 0.0
+        self.audio_controller = None
+        if self.audio_feedback:
+            self.audio_controller = AudioFeedback(
+                mode=self.audio_mode,
+                contact_threshold=self.audio_contact_threshold,
+                lateral_threshold=self.audio_lateral_threshold,
+                lateral_max=self.audio_lateral_max,
+                volume=self.audio_volume,
+            )
 
         self.scenario_impl.initialize_state(self)
 
@@ -158,6 +211,11 @@ class FrankaForceEnv:
             "Task Success",
             "Success Contact",
             "Success Hold Time",
+            "Hole Clearance (mm)",
+            "Audio Feedback",
+            "Audio Contact Event",
+            "Audio Tick Rate (Hz)",
+            "Audio Lateral Force (N)",
         ])
 
         self.model = self._build_model()
@@ -261,6 +319,12 @@ class FrankaForceEnv:
             self.task_success_history.append(self.task_success)
             self.success_contact_history.append(self.success_contact)
             self.success_hold_time_history.append(self.success_hold_time)
+            audio_contact_event = self.audio_contact_event_since_sample
+            self.hole_clearance_history.append(self.hole_clearance_mm)
+            self.audio_feedback_history.append(self.audio_feedback)
+            self.audio_contact_event_history.append(audio_contact_event)
+            self.audio_tick_rate_history.append(self.latest_audio_tick_rate)
+            self.audio_lateral_force_history.append(self.latest_audio_lateral_force)
 
             self.log_writer.writerow([
                 self.data.time,
@@ -277,7 +341,13 @@ class FrankaForceEnv:
                 int(self.task_success),
                 int(self.success_contact),
                 self.success_hold_time,
+                self.hole_clearance_mm,
+                int(self.audio_feedback),
+                int(audio_contact_event),
+                self.latest_audio_tick_rate,
+                self.latest_audio_lateral_force,
             ])
+            self.audio_contact_event_since_sample = False
 
         self.step_counter += 1
 
@@ -286,6 +356,25 @@ class FrankaForceEnv:
         self.latest_in_contact = in_contact
         self.latest_f_true = f_true
         self.latest_f_est = f_est
+
+    def _update_audio_feedback(self):
+        if self.audio_controller is None:
+            self.latest_audio_contact_event = False
+            self.latest_audio_tick_rate = 0.0
+            self.latest_audio_lateral_force = 0.0
+            return
+
+        state = self.audio_controller.update(
+            self.data.time,
+            self.latest_f_est,
+            self.latest_contact_force_vector,
+        )
+        self.latest_audio_contact_event = state.contact_event
+        self.audio_contact_event_since_sample = (
+            self.audio_contact_event_since_sample or state.contact_event
+        )
+        self.latest_audio_tick_rate = state.tick_rate
+        self.latest_audio_lateral_force = state.lateral_force
 
     def _force_feedback_magnitude(self):
         return max(self.latest_f_est, self.latest_f_true)
@@ -337,6 +426,8 @@ class FrankaForceEnv:
 
                     if interactive or self.record_force_feedback:
                         self._update_live_force()
+                    if interactive:
+                        self._update_audio_feedback()
                     self._record_telemetry(force=self.task_stop_requested)
 
                     if interactive:
@@ -374,6 +465,8 @@ class FrankaForceEnv:
         finally:
             if recorder is not None:
                 recorder.close()
+            if self.audio_controller is not None:
+                self.audio_controller.close()
             if interactive:
                 self.scenario_impl.stop_interactive(self)
             mujoco.set_mjcb_control(None)
@@ -417,5 +510,7 @@ class FrankaForceEnv:
         try:
             if hasattr(self, "log_file") and not self.log_file.closed:
                 self.log_file.close()
+            if hasattr(self, "audio_controller") and self.audio_controller is not None:
+                self.audio_controller.close()
         except Exception:
             pass

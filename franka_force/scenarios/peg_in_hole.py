@@ -28,11 +28,11 @@ class PegInHoleScenario(Scenario):
     force_ring_min_width = 0.0020
     force_ring_width_range = 0.0042
     idle_marker_offset = np.array([0.0, -0.12, 0.14])
+    peg_radius = 0.012
     socket_origin = np.array([0.50, 0.0, 0.0])
     socket_wall_thick = 0.015
     socket_wall_len = 0.05
     socket_wall_height = 0.04
-    socket_hole_gap = 0.016
     occluder_thick = 0.006
     occluder_gap = 0.015
     occluder_extra_gap = 0.020
@@ -71,7 +71,7 @@ class PegInHoleScenario(Scenario):
         hand_body.add_geom(
             name="peg_geom",
             type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-            size=[0.012, 0.05],
+            size=[self.peg_radius, 0.05],
             pos=[0, 0, 0.10],
             rgba=[0.8, 0.8, 0.8, env.peg_alpha],
             mass=0.2,
@@ -82,7 +82,7 @@ class PegInHoleScenario(Scenario):
         wall_thick = self.socket_wall_thick
         wall_len = self.socket_wall_len
         wall_height = self.socket_wall_height
-        hole_gap = self.socket_hole_gap
+        hole_gap = self._hole_gap(env)
         socket_rgba = [0.4, 0.4, 0.4, env.socket_alpha]
 
         socket_base.add_geom(
@@ -111,7 +111,7 @@ class PegInHoleScenario(Scenario):
         )
 
         if env.occluded_task:
-            self._add_occluded_task_geoms(socket_base)
+            self._add_occluded_task_geoms(env, socket_base)
 
         ik_target = spec.worldbody.add_body(name="ik_target", mocap=True)
         ik_target.add_geom(
@@ -125,9 +125,10 @@ class PegInHoleScenario(Scenario):
 
         self._add_floor_compass(spec, origin=[0.38, 0.0, 0.0])
 
-    def _add_occluded_task_geoms(self, socket_base):
+    def _add_occluded_task_geoms(self, env, socket_base):
         occluder_height = self._occluder_height()
         occluder_y = self._occluder_local_y()
+        hole_gap = self._hole_gap(env)
         socket_base.add_geom(
             name="occlusion_wall_geom",
             type=mujoco.mjtGeom.mjGEOM_BOX,
@@ -145,8 +146,8 @@ class PegInHoleScenario(Scenario):
             name="peg_success_pad_geom",
             type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[
-                self.socket_hole_gap * 0.75,
-                self.socket_hole_gap * 0.75,
+                hole_gap * 0.75,
+                hole_gap * 0.75,
                 self.success_pad_thickness,
             ],
             pos=[0.0, 0.0, self.success_pad_thickness],
@@ -208,6 +209,7 @@ class PegInHoleScenario(Scenario):
         print("(red collision boxes, joint axes, etc.), not robot controls.")
         print("Hold arrow keys for smooth motion if pynput is installed.")
         print("Peg orientation is locked pointing down; use 6/7 to spin it.")
+        print(f"Hole clearance: {env.hole_clearance_mm:.2f} mm total.")
         if env._force_feedback_overlay_enabled():
             print("Force feedback overlay: ON")
             print(f"  Visual mode: {env.force_visual}")
@@ -232,6 +234,16 @@ class PegInHoleScenario(Scenario):
             print("  Wider opaque front wall hides an off-center socket and hidden success pad.")
             print("  Live camera starts wide front-on; recordings use a side observer camera.")
             print(f"  Success requires {self.success_hold_required:.2f}s of sustained peg-pad contact.")
+        if env.audio_feedback:
+            print("Audio feedback: ON")
+            print(f"  Mode: {env.audio_mode}")
+            print(f"  Contact click above {env.audio_contact_threshold:.1f} N Jacobian estimate.")
+            print(
+                f"  Geiger ticks above {env.audio_lateral_threshold:.1f} N lateral force, "
+                f"maxing near {env.audio_lateral_max:.1f} N."
+            )
+        else:
+            print("Audio feedback: OFF")
         print()
 
     def start_interactive(self, env):
@@ -313,6 +325,13 @@ class PegInHoleScenario(Scenario):
         if env.occluded_task:
             return self.socket_origin + self.occluded_socket_offset
         return self.socket_origin
+
+    def _hole_gap(self, env):
+        return self._hole_gap_from_clearance(env.hole_clearance_mm)
+
+    def _hole_gap_from_clearance(self, clearance_mm):
+        clearance_m = clearance_mm / 1000.0
+        return self.peg_radius + clearance_m / 2.0
 
     def _occluder_height(self):
         return self.socket_wall_height * 2.0 + self.occluder_extra_height

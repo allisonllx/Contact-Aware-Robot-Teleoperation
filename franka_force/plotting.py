@@ -26,6 +26,11 @@ def plot_force_comparison(env):
     task_success = _history_array(env, "task_success_history", len(t), dtype=bool)
     success_contact = _history_array(env, "success_contact_history", len(t), dtype=bool)
     success_hold_time = _history_array(env, "success_hold_time_history", len(t), dtype=float)
+    hole_clearance = _history_array(env, "hole_clearance_history", len(t), dtype=float)
+    audio_feedback = _history_array(env, "audio_feedback_history", len(t), dtype=bool)
+    audio_contact_event = _history_array(env, "audio_contact_event_history", len(t), dtype=bool)
+    audio_tick_rate = _history_array(env, "audio_tick_rate_history", len(t), dtype=float)
+    audio_lateral_force = _history_array(env, "audio_lateral_force_history", len(t), dtype=float)
 
     _write_filtered_csv(
         env.telemetry_filtered_path,
@@ -41,6 +46,11 @@ def plot_force_comparison(env):
         task_success,
         success_contact,
         success_hold_time,
+        hole_clearance,
+        audio_feedback,
+        audio_contact_event,
+        audio_tick_rate,
+        audio_lateral_force,
     )
 
     _save_plot(
@@ -122,6 +132,11 @@ def _write_filtered_csv(
     task_success,
     success_contact,
     success_hold_time,
+    hole_clearance,
+    audio_feedback,
+    audio_contact_event,
+    audio_tick_rate,
+    audio_lateral_force,
 ):
     with open(path, mode="w", newline="") as f:
         writer = csv.writer(f)
@@ -139,6 +154,11 @@ def _write_filtered_csv(
             "Task Success",
             "Success Contact",
             "Success Hold Time",
+            "Hole Clearance (mm)",
+            "Audio Feedback",
+            "Audio Contact Event",
+            "Audio Tick Rate (Hz)",
+            "Audio Lateral Force (N)",
         ])
         for i in np.where(is_clean)[0]:
             writer.writerow([
@@ -155,6 +175,11 @@ def _write_filtered_csv(
                 int(task_success[i]),
                 int(success_contact[i]),
                 success_hold_time[i],
+                hole_clearance[i],
+                int(audio_feedback[i]),
+                int(audio_contact_event[i]),
+                audio_tick_rate[i],
+                audio_lateral_force[i],
             ])
     print(f"Saved filtered CSV to {path.resolve()}")
 

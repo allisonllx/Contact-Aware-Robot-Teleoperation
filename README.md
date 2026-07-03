@@ -70,6 +70,23 @@ In `--occluded-task`, the socket contact is hidden behind the opaque wall, so th
 
 For future physical robot runs, MuJoCo contact data will not be available. A real-system version should rely on the Jacobian/torque-based wrench estimate, force-torque sensing, or another contact-localization signal. Without tactile sensing, vision, proximity checks, or geometry-based inference, the real robot can show an estimated force vector at the end effector, but it cannot know the exact surface contact point in the same way the simulator can.
 
+Run a **tight-clearance peg-in-hole trial**:
+
+```bash
+mjpython main.py --scenario peg_in_hole --interactive --hole-clearance-mm 0.5 --force-feedback
+```
+
+`--hole-clearance-mm` controls total peg/hole clearance. The default is `8.0 mm`, matching the original scene. Useful experiment values are `8.0`, `2.0`, `1.0`, and `0.5`; at sub-millimeter clearance, small lateral offsets become hard to diagnose visually, so force patterns become more informative.
+
+Enable **audio force feedback**:
+
+```bash
+mjpython main.py --scenario peg_in_hole --interactive --hole-clearance-mm 1.0 --audio-feedback --audio-mode both
+mjpython main.py --scenario peg_in_hole --interactive --occluded-task --hole-clearance-mm 1.0 --audio-feedback --audio-mode both
+```
+
+`--audio-feedback` is live-only and uses dependency-free click/tick cues. `contact` mode plays a short click when the Jacobian estimate crosses `--audio-contact-threshold` (`2 N` by default). `geiger` mode maps lateral contact force to sparse ticking: silence below `--audio-lateral-threshold`, faster ticks as lateral resistance approaches `--audio-lateral-max`. `both` combines the contact click with Geiger ticks. This v1 does not generate continuous pitch or embed audio into `run_recording.mp4`; if macOS `afplay` is unavailable, the run continues silently with a warning.
+
 Make the **peg and socket walls semi-transparent** when inspecting internal contacts:
 
 ```bash
@@ -139,7 +156,7 @@ franka_force/scenarios/         Scenario-specific model, control, and contact lo
 
 `FrankaForceEnv` delegates scenario-specific behavior through the scenario registry in `franka_force/scenarios/__init__.py`, so adding a new scenario should usually mean adding one scenario module and registering it there.
 
-The CSV files also include cushion state, cushion scale, impedance torque norm, strongest contact-force vector components, and occluded-task success state when enabled.
+The CSV files also include cushion state, cushion scale, impedance torque norm, strongest contact-force vector components, occluded-task success state, hole clearance, and audio feedback state when enabled.
 
 ## Control Experiments
 

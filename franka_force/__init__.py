@@ -1,6 +1,6 @@
-from .config import FORCE_VISUAL_MODES, SCENARIOS
+from .config import AUDIO_MODES, FORCE_VISUAL_MODES, SCENARIOS
 
-__all__ = ["FORCE_VISUAL_MODES", "FrankaForceEnv", "SCENARIOS"]
+__all__ = ["AUDIO_MODES", "FORCE_VISUAL_MODES", "FrankaForceEnv", "SCENARIOS"]
 
 
 def __getattr__(name):

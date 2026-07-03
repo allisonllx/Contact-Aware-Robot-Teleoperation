@@ -1,8 +1,13 @@
 import argparse
 
-from franka_force import FORCE_VISUAL_MODES, SCENARIOS
+from franka_force import AUDIO_MODES, FORCE_VISUAL_MODES, SCENARIOS
 from franka_force.config import (
+    DEFAULT_AUDIO_CONTACT_THRESHOLD,
+    DEFAULT_AUDIO_LATERAL_MAX,
+    DEFAULT_AUDIO_LATERAL_THRESHOLD,
+    DEFAULT_AUDIO_VOLUME,
     DEFAULT_CUSHION_THRESHOLD,
+    DEFAULT_HOLE_CLEARANCE_MM,
     DEFAULT_IMPEDANCE_DP,
     DEFAULT_IMPEDANCE_DR,
     DEFAULT_IMPEDANCE_KP,
@@ -51,6 +56,47 @@ def parse_args():
         "--occluded-task",
         action="store_true",
         help="Enable peg_in_hole visual-occlusion experiment with hidden success pad",
+    )
+    parser.add_argument(
+        "--hole-clearance-mm",
+        type=float,
+        default=DEFAULT_HOLE_CLEARANCE_MM,
+        help="Total peg/hole clearance in millimeters for peg_in_hole",
+    )
+    parser.add_argument(
+        "--audio-feedback",
+        action="store_true",
+        help="Enable live audio force cues (peg_in_hole + --interactive only)",
+    )
+    parser.add_argument(
+        "--audio-mode",
+        choices=AUDIO_MODES,
+        default="both",
+        help="Audio cue mode for --audio-feedback",
+    )
+    parser.add_argument(
+        "--audio-contact-threshold",
+        type=float,
+        default=DEFAULT_AUDIO_CONTACT_THRESHOLD,
+        help="Jacobian-estimate force threshold in newtons for contact click",
+    )
+    parser.add_argument(
+        "--audio-lateral-threshold",
+        type=float,
+        default=DEFAULT_AUDIO_LATERAL_THRESHOLD,
+        help="Lateral contact-force threshold in newtons for Geiger ticks",
+    )
+    parser.add_argument(
+        "--audio-lateral-max",
+        type=float,
+        default=DEFAULT_AUDIO_LATERAL_MAX,
+        help="Lateral contact force in newtons that maps to max Geiger tick rate",
+    )
+    parser.add_argument(
+        "--audio-volume",
+        type=float,
+        default=DEFAULT_AUDIO_VOLUME,
+        help="Audio cue volume from 0.0 to 1.0",
     )
     parser.add_argument(
         "--contact-cushion",
@@ -120,6 +166,13 @@ if __name__ == "__main__":
         record_video=args.record_video,
         record_force_feedback=args.record_force_feedback,
         occluded_task=args.occluded_task,
+        hole_clearance_mm=args.hole_clearance_mm,
+        audio_feedback=args.audio_feedback,
+        audio_mode=args.audio_mode,
+        audio_contact_threshold=args.audio_contact_threshold,
+        audio_lateral_threshold=args.audio_lateral_threshold,
+        audio_lateral_max=args.audio_lateral_max,
+        audio_volume=args.audio_volume,
         contact_cushion=args.contact_cushion,
         cushion_threshold=args.cushion_threshold,
         impedance_kp=args.impedance_kp,
