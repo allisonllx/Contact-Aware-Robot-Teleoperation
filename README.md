@@ -66,6 +66,8 @@ mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-v
 
 In the simulator, these visual overlays are contact-data based rather than Jacobian-estimate based. MuJoCo provides the contact point, contact frame, and contact force, so the ring can show where contact occurs and the arrow can turn rim contact into a hole-center guidance cue. The Jacobian estimate is still logged and plotted for comparison, but by itself it gives an end-effector wrench estimate rather than a ground-truth contact point on the hole wall.
 
+In `--occluded-task`, the socket contact is hidden behind the opaque wall, so the selected arrow/ring feedback is projected to a visible proxy position just in front of and above the wall. The cue still comes from hidden contact data, but it is displayed as feedback rather than as physically occluded contact geometry.
+
 For future physical robot runs, MuJoCo contact data will not be available. A real-system version should rely on the Jacobian/torque-based wrench estimate, force-torque sensing, or another contact-localization signal. Without tactile sensing, vision, proximity checks, or geometry-based inference, the real robot can show an estimated force vector at the end effector, but it cannot know the exact surface contact point in the same way the simulator can.
 
 Make the **peg and socket walls semi-transparent** when inspecting internal contacts:

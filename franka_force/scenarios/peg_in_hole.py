@@ -40,6 +40,8 @@ class PegInHoleScenario(Scenario):
     occluder_width_scale = 1.35
     occluder_x_offset = 0.025
     occluded_socket_offset = np.array([0.0, 0.025, 0.0])
+    occluded_feedback_front_margin = 0.008
+    occluded_feedback_lift = 0.025
     success_pad_thickness = 0.001
     success_hold_required = 0.15
 
@@ -124,14 +126,8 @@ class PegInHoleScenario(Scenario):
         self._add_floor_compass(spec, origin=[0.38, 0.0, 0.0])
 
     def _add_occluded_task_geoms(self, socket_base):
-        wall_top = self.socket_wall_height * 2.0
-        occluder_height = wall_top + self.occluder_extra_height
-        occluder_y = (
-            -self.socket_wall_len
-            - self.occluder_gap
-            - self.occluder_extra_gap
-            - self.occluder_thick
-        )
+        occluder_height = self._occluder_height()
+        occluder_y = self._occluder_local_y()
         socket_base.add_geom(
             name="occlusion_wall_geom",
             type=mujoco.mjtGeom.mjGEOM_BOX,
@@ -218,6 +214,8 @@ class PegInHoleScenario(Scenario):
             print("  Green sphere above hand = waiting for contact.")
             print("  Red/orange arrow starts at rim contact and points toward the hole axis.")
             print("  Red/orange contact ring is centered on the strongest contact surface.")
+            if env.occluded_task:
+                print("  Occluded mode projects feedback in front of the wall so it stays visible.")
             if env.force_feedback:
                 print("  Live viewer overlay enabled.")
             if env.record_force_feedback:
@@ -315,6 +313,35 @@ class PegInHoleScenario(Scenario):
         if env.occluded_task:
             return self.socket_origin + self.occluded_socket_offset
         return self.socket_origin
+
+    def _occluder_height(self):
+        return self.socket_wall_height * 2.0 + self.occluder_extra_height
+
+    def _occluder_local_y(self):
+        return (
+            -self.socket_wall_len
+            - self.occluder_gap
+            - self.occluder_extra_gap
+            - self.occluder_thick
+        )
+
+    def _occluded_feedback_y(self, env):
+        socket_origin = self._socket_origin(env)
+        return (
+            socket_origin[1]
+            + self._occluder_local_y()
+            - self.occluder_thick
+            - self.occluded_feedback_front_margin
+        )
+
+    def _force_feedback_display_pos(self, env, contact_pos):
+        pos = np.asarray(contact_pos, dtype=np.float64).copy()
+        if not env.occluded_task:
+            return pos
+
+        pos[1] = self._occluded_feedback_y(env)
+        pos[2] = max(pos[2], self._occluder_height() + self.occluded_feedback_lift)
+        return pos
 
     def _set_free_camera(self, camera, lookat, distance, azimuth, elevation):
         camera.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -1020,7 +1047,7 @@ class PegInHoleScenario(Scenario):
             fallback = env.latest_contact_frame[0]
         direction = self._unit_vector(force_vector, fallback)
 
-        contact_pos = np.asarray(env.latest_contact_arrow_pos, dtype=np.float64)
+        contact_pos = self._force_feedback_display_pos(env, env.latest_contact_arrow_pos)
         p1 = contact_pos
         p2 = contact_pos + direction * arrow_len
         color = self._force_color(intensity)
@@ -1044,16 +1071,22 @@ class PegInHoleScenario(Scenario):
         radius = self.force_ring_min_radius + intensity * self.force_ring_radius_range
         ring_width = self.force_ring_min_width + intensity * self.force_ring_width_range
         color = self._force_color(intensity)
-        frame = env.latest_contact_frame
-        normal = self._unit_vector(frame[0], np.array([0.0, 0.0, 1.0]))
-        tangent_a = self._unit_vector(frame[1], np.array([1.0, 0.0, 0.0]))
-        tangent_b = np.cross(normal, tangent_a)
-        if np.linalg.norm(tangent_b) < 1e-9:
-            tangent_b = self._unit_vector(frame[2], np.array([0.0, 1.0, 0.0]))
+        if env.occluded_task:
+            normal = np.array([0.0, 0.0, 1.0])
+            tangent_a = np.array([1.0, 0.0, 0.0])
+            tangent_b = np.array([0.0, 1.0, 0.0])
+            center = self._force_feedback_display_pos(env, env.latest_contact_pos)
         else:
-            tangent_b = self._unit_vector(tangent_b, np.array([0.0, 1.0, 0.0]))
-        tangent_a = self._unit_vector(np.cross(tangent_b, normal), tangent_a)
-        center = env.latest_contact_pos + normal * 0.002
+            frame = env.latest_contact_frame
+            normal = self._unit_vector(frame[0], np.array([0.0, 0.0, 1.0]))
+            tangent_a = self._unit_vector(frame[1], np.array([1.0, 0.0, 0.0]))
+            tangent_b = np.cross(normal, tangent_a)
+            if np.linalg.norm(tangent_b) < 1e-9:
+                tangent_b = self._unit_vector(frame[2], np.array([0.0, 1.0, 0.0]))
+            else:
+                tangent_b = self._unit_vector(tangent_b, np.array([0.0, 1.0, 0.0]))
+            tangent_a = self._unit_vector(np.cross(tangent_b, normal), tangent_a)
+            center = env.latest_contact_pos + normal * 0.002
         zero3 = np.zeros((3, 1), dtype=np.float64)
 
         for segment in range(segments):
