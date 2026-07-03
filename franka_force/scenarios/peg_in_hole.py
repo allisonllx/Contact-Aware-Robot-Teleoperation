@@ -17,6 +17,16 @@ class PegInHoleScenario(Scenario):
     force_visual_min = 10.0
     force_visual_threshold = force_visual_min
     force_visual_max = 1000.0
+    force_visual_lateral_min = 8.0
+    force_visual_lateral_ratio = 0.03
+    force_arrow_min_length = 0.045
+    force_arrow_length_range = 0.215
+    force_arrow_min_width = 0.0026
+    force_arrow_width_range = 0.0064
+    force_ring_min_radius = 0.022
+    force_ring_radius_range = 0.066
+    force_ring_min_width = 0.0020
+    force_ring_width_range = 0.0042
     idle_marker_offset = np.array([0.0, -0.12, 0.14])
     socket_origin = np.array([0.50, 0.0, 0.0])
     socket_wall_thick = 0.015
@@ -206,7 +216,7 @@ class PegInHoleScenario(Scenario):
             print("Force feedback overlay: ON")
             print(f"  Visual mode: {env.force_visual}")
             print("  Green sphere above hand = waiting for contact.")
-            print("  Red/orange arrow starts at the strongest contact and points along force-on-peg.")
+            print("  Red/orange arrow starts at rim contact and points toward the hole axis.")
             print("  Red/orange contact ring is centered on the strongest contact surface.")
             if env.force_feedback:
                 print("  Live viewer overlay enabled.")
@@ -596,11 +606,17 @@ class PegInHoleScenario(Scenario):
 
     def _peg_contact_summary(self, env):
         force_world = np.zeros(3)
-        strongest_force = 0.0
-        strongest_pos = None
-        strongest_frame = None
-        strongest_force_vector = np.zeros(3)
-        strongest_arrow_vector = np.zeros(3)
+        strongest_total_force = 0.0
+        strongest_total_pos = None
+        strongest_total_frame = None
+        strongest_total_force_vector = np.zeros(3)
+        strongest_total_arrow_vector = np.zeros(3)
+        strongest_lateral_score = 0.0
+        strongest_lateral_force = 0.0
+        strongest_lateral_pos = None
+        strongest_lateral_frame = None
+        strongest_lateral_force_vector = np.zeros(3)
+        strongest_lateral_arrow_vector = np.zeros(3)
 
         for i in range(env.data.ncon):
             contact = env.data.contact[i]
@@ -610,22 +626,46 @@ class PegInHoleScenario(Scenario):
             contact_force, normal_force = self._contact_force_vectors_on_peg(env, contact, i)
             contact_force_mag = float(np.linalg.norm(contact_force))
             force_world += contact_force
+            arrow_vector = self._visual_contact_force_vector(env, contact.pos, contact_force, normal_force)
+            lateral_score = self._contact_lateral_score(contact_force, normal_force)
 
-            if contact_force_mag > strongest_force:
-                strongest_force = contact_force_mag
-                strongest_pos = contact.pos.copy()
-                strongest_frame = contact.frame.reshape(3, 3).copy()
-                strongest_force_vector = contact_force.copy()
-                strongest_arrow_vector = self._visual_contact_force_vector(contact_force, normal_force)
+            if contact_force_mag > strongest_total_force:
+                strongest_total_force = contact_force_mag
+                strongest_total_pos = contact.pos.copy()
+                strongest_total_frame = contact.frame.reshape(3, 3).copy()
+                strongest_total_force_vector = contact_force.copy()
+                strongest_total_arrow_vector = arrow_vector.copy()
+
+            if self._is_meaningful_lateral_contact(lateral_score, contact_force_mag):
+                if lateral_score > strongest_lateral_score:
+                    strongest_lateral_score = lateral_score
+                    strongest_lateral_force = contact_force_mag
+                    strongest_lateral_pos = contact.pos.copy()
+                    strongest_lateral_frame = contact.frame.reshape(3, 3).copy()
+                    strongest_lateral_force_vector = contact_force.copy()
+                    strongest_lateral_arrow_vector = arrow_vector.copy()
+
+        if strongest_lateral_pos is not None:
+            selected_pos = strongest_lateral_pos
+            selected_frame = strongest_lateral_frame
+            selected_force = strongest_lateral_force
+            selected_force_vector = strongest_lateral_force_vector
+            selected_arrow_vector = strongest_lateral_arrow_vector
+        else:
+            selected_pos = strongest_total_pos
+            selected_frame = strongest_total_frame
+            selected_force = strongest_total_force
+            selected_force_vector = strongest_total_force_vector
+            selected_arrow_vector = strongest_total_arrow_vector
 
         return (
-            strongest_pos is not None,
+            selected_pos is not None,
             float(np.linalg.norm(force_world)),
-            strongest_pos,
-            strongest_frame,
-            strongest_force,
-            strongest_force_vector,
-            strongest_arrow_vector,
+            selected_pos,
+            selected_frame,
+            selected_force,
+            selected_force_vector,
+            selected_arrow_vector,
         )
 
     def _contact_force_vectors_on_peg(self, env, contact, contact_idx):
@@ -640,15 +680,44 @@ class PegInHoleScenario(Scenario):
             return full_force, normal_force
         return -full_force, -normal_force
 
-    def _visual_contact_force_vector(self, full_force, normal_force):
-        """Use stable normal reaction for visual direction, preserving full-force magnitude for size."""
+    def _visual_contact_force_vector(self, env, contact_pos, full_force, normal_force):
+        """Point rim-contact guidance toward the hole axis, preserving contact magnitude for size."""
         full_mag = float(np.linalg.norm(full_force))
         normal_mag = float(np.linalg.norm(normal_force))
         if full_mag < 1e-9:
             return np.zeros(3)
+
+        lateral_score = self._contact_lateral_score(full_force, normal_force)
+        if self._is_meaningful_lateral_contact(lateral_score, full_mag):
+            guidance = self._hole_center_guidance_vector(env, contact_pos)
+            guidance_mag = float(np.linalg.norm(guidance))
+            if guidance_mag > 1e-9:
+                return guidance / guidance_mag * full_mag
+
         if normal_mag < 1e-9:
             return full_force
         return normal_force / normal_mag * full_mag
+
+    def _hole_center_guidance_vector(self, env, contact_pos):
+        guidance = self._socket_origin(env).astype(np.float64) - np.asarray(contact_pos, dtype=np.float64)
+        guidance[2] = 0.0
+        return guidance
+
+    def _horizontal_component(self, vector):
+        lateral = np.asarray(vector, dtype=np.float64).copy()
+        lateral[2] = 0.0
+        return lateral
+
+    def _contact_lateral_score(self, full_force, normal_force):
+        full_lateral = np.linalg.norm(self._horizontal_component(full_force))
+        normal_lateral = np.linalg.norm(self._horizontal_component(normal_force))
+        return float(max(full_lateral, normal_lateral))
+
+    def _is_meaningful_lateral_contact(self, lateral_score, force_magnitude):
+        return (
+            lateral_score >= self.force_visual_lateral_min
+            and lateral_score >= force_magnitude * self.force_visual_lateral_ratio
+        )
 
     def _update_contact_arrow_visual(self, env, in_contact, contact_pos, contact_force, arrow_vector):
         if not in_contact or contact_pos is None or contact_force <= self.force_visual_threshold:
@@ -677,8 +746,6 @@ class PegInHoleScenario(Scenario):
         else:
             alpha = env._contact_arrow_smoothing
             prev_vector = env._smoothed_contact_arrow_vector
-            if np.dot(prev_vector, arrow_vector) < 0.0:
-                arrow_vector = -arrow_vector
             env._smoothed_contact_arrow_pos = (
                 (1.0 - alpha) * env._smoothed_contact_arrow_pos + alpha * contact_pos
             )
@@ -946,8 +1013,8 @@ class PegInHoleScenario(Scenario):
             return idx
 
         intensity = self._force_visual_intensity(force_magnitude)
-        arrow_len = 0.045 + intensity * 0.235
-        shaft_width = 0.0045 + intensity * 0.012
+        arrow_len = self.force_arrow_min_length + intensity * self.force_arrow_length_range
+        shaft_width = self.force_arrow_min_width + intensity * self.force_arrow_width_range
         fallback = np.array([0.0, 0.0, 1.0])
         if env.latest_contact_frame is not None:
             fallback = env.latest_contact_frame[0]
@@ -974,8 +1041,8 @@ class PegInHoleScenario(Scenario):
 
         force_magnitude = max(env.latest_contact_force, self._force_feedback_magnitude(env))
         intensity = self._force_visual_intensity(force_magnitude)
-        radius = 0.025 + intensity * 0.095
-        ring_width = 0.0035 + intensity * 0.007
+        radius = self.force_ring_min_radius + intensity * self.force_ring_radius_range
+        ring_width = self.force_ring_min_width + intensity * self.force_ring_width_range
         color = self._force_color(intensity)
         frame = env.latest_contact_frame
         normal = self._unit_vector(frame[0], np.array([0.0, 0.0, 1.0]))
