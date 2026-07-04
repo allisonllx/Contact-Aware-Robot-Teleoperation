@@ -1,12 +1,14 @@
-# Odyssey Project: Robot Haptic Feedback
+# Odyssey Project: Contact-Aware Robot Teleoperation
 
-MuJoCo simulations for checking contact-force estimates on a Franka Emika Panda arm. The project runs a small set of scenarios, logs ground-truth contact forces against Jacobian-based estimates, and writes comparison plots for each run.
+MuJoCo simulations for contact-aware teleoperation on a Franka Emika Panda arm. The project mainly focuses on a `peg_in_hole` insertion task, with `push_block` and `hit_floor` as smaller side tasks for checking contact behavior.
+
+The goal is to investigate whether Jacobian-based force estimation is accurate against MuJoCo ground-truth contact forces, and whether live force feedback in the MuJoCo environment helps users carry out contact-rich tasks more safely and faster. Feedback can be visual, audio, or both. Each run logs measured contact forces against estimated forces and writes comparison plots for later analysis.
 
 ## Scenarios
 
-- `push_block`: moves the gripper into a free block and compares block contact force against the virtual force estimate.
-- `hit_floor`: lowers the gripper toward the floor and compares floor contact force against the virtual force estimate.
-- `peg_in_hole`: adds a peg, socket, IK target, and optional keyboard teleoperation for insertion practice.
+- `peg_in_hole`: the primary task. Adds a peg, socket, IK target, and optional keyboard teleoperation for insertion practice with visual and audio force-feedback experiments.
+- `push_block`: a side task that moves the gripper into a free block and compares block contact force against the virtual force estimate.
+- `hit_floor`: a side task that lowers the gripper toward the floor and compares floor contact force against the virtual force estimate.
 
 ## Setup
 
