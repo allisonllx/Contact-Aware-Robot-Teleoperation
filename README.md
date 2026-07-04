@@ -30,13 +30,30 @@ On macOS, MuJoCo viewer workflows that use the passive viewer, including interac
 
 ## Usage
 
-Run the **default scenario**:
+### Quick Summary
+
+Use `python3` for plain scripted runs. Use `mjpython` on macOS for commands that open the MuJoCo viewer, use keyboard teleoperation, or record video.
+
+| Goal | Example command |
+| --- | --- |
+| Run the default scripted task | `python3 main.py` |
+| Run a side-task force check | `python3 main.py --scenario push_block` |
+| Practice peg insertion manually | `mjpython main.py --scenario peg_in_hole --interactive` |
+| Practice with visual feedback | `mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual both` |
+| Add audio feedback | `mjpython main.py --scenario peg_in_hole --interactive --audio-feedback --audio-mode both` |
+| Record a run | `mjpython main.py --scenario peg_in_hole --interactive --record-video` |
+
+### Common Workflows
+
+#### 1. Scripted force verification
+
+Run the default scenario:
 
 ```bash
 python3 main.py
 ```
 
-Run a **specific scenario**:
+Run a specific scenario:
 
 ```bash
 python3 main.py --scenario push_block
@@ -44,62 +61,64 @@ python3 main.py --scenario hit_floor
 python3 main.py --scenario peg_in_hole
 ```
 
-Run the **interactive peg-in-hole task**:
+Disable the scripted policy if you want a non-interactive scenario to load without carrying out its default motion:
+
+```bash
+python3 main.py --scenario push_block --disable-policy
+python3 main.py --scenario hit_floor --disable-policy
+```
+
+#### 2. Interactive keyboard teleoperation
+
+Run the main peg-in-hole task:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive
 ```
 
-Run the **side tasks with keyboard teleoperation**:
+Run side tasks with keyboard control:
 
 ```bash
 mjpython main.py --scenario push_block --interactive
 mjpython main.py --scenario hit_floor --interactive
 ```
 
-Side-task teleoperation is position-only by default. Add **free orientation** when you want to rotate the end effector during exploration:
+Side-task teleoperation is position-only by default. Add free orientation when you want to rotate the end effector during contact exploration:
 
 ```bash
 mjpython main.py --scenario push_block --interactive --free-orientation
 mjpython main.py --scenario hit_floor --interactive --free-orientation
 ```
 
-With `--free-orientation`, arrow keys still move in X/Y, `9`/`8` move in Z, `[`/`]` control pitch, `-`/`=` control yaw, and `6`/`7` control roll. `peg_in_hole` intentionally does not use this mode: its peg stays constrained to face downward, with `6`/`7` only spinning the peg about the vertical insertion axis.
+`peg_in_hole` intentionally does not use free orientation: the peg stays constrained to face downward, and `6`/`7` only spin the peg about the vertical insertion axis.
 
-Disable the **scripted policy** in a non-interactive run:
-
-```bash
-mjpython main.py --scenario push_block --disable-policy
-mjpython main.py --scenario hit_floor --disable-policy
-```
-
-Enable **live force feedback** during an interactive task:
+#### 3. Visual force feedback
 
 ```bash
-mjpython main.py --scenario peg_in_hole --interactive --force-feedback
-mjpython main.py --scenario push_block --interactive --force-feedback
-mjpython main.py --scenario hit_floor --interactive --force-feedback
-```
-
-Choose the **force-feedback visual**:
-
-```bash
-mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual arrow
-mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual ring
 mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual both
+mjpython main.py --scenario push_block --interactive --force-feedback --force-visual both
+mjpython main.py --scenario hit_floor --interactive --force-feedback --force-visual both
 ```
 
-The same `--force-visual` modes work with `push_block` and `hit_floor`.
-
-`arrow` draws a red/orange raw force vector at the strongest target contact point. Its direction is the measured MuJoCo contact-force direction in world coordinates, with a consistent sign on the robot/tool side of the contact. `ring` draws a red/orange ring at the selected contact surface, and `both` draws both overlays. The size of each overlay uses a log scale from roughly `10 N` to `1000 N`, so mid-range forces remain visually distinguishable without huge spikes dominating the view.
+`--force-visual` can be `arrow`, `ring`, or `both`. `arrow` draws a red/orange raw force vector at the strongest target contact point. Its direction is the measured MuJoCo contact-force direction in world coordinates, with a consistent sign on the robot/tool side of the contact. `ring` draws a red/orange ring at the selected contact surface. The overlay size uses a log scale from roughly `10 N` to `1000 N`, so mid-range forces remain visible without huge spikes dominating the view.
 
 In the simulator, these visual overlays are contact-data based rather than Jacobian-estimate based. MuJoCo provides the contact point, contact frame, and contact force, so the ring can show where contact occurs and the arrow can show the raw contact-force vector. The Jacobian estimate is still logged and plotted for comparison, but by itself it gives an end-effector wrench estimate rather than a ground-truth contact point on the contacted surface.
 
-In `--occluded-task`, the socket contact is hidden behind the opaque wall, so the selected arrow/ring feedback is projected to a visible proxy position just in front of and above the wall. The cue still comes from hidden contact data, but it is displayed as feedback rather than as physically occluded contact geometry.
-
 For future physical robot runs, MuJoCo contact data will not be available. A real-system version should rely on the Jacobian/torque-based wrench estimate, force-torque sensing, or another contact-localization signal. Without tactile sensing, vision, proximity checks, or geometry-based inference, the real robot can show an estimated force vector at the end effector, but it cannot know the exact surface contact point in the same way the simulator can.
 
-Run a **tight-clearance peg-in-hole trial**:
+#### 4. Audio force feedback
+
+```bash
+mjpython main.py --scenario peg_in_hole --interactive --hole-clearance-mm 1.0 --audio-feedback --audio-mode both
+mjpython main.py --scenario push_block --interactive --audio-feedback --audio-mode both
+mjpython main.py --scenario hit_floor --interactive --audio-feedback --audio-mode both
+```
+
+`--audio-feedback` is live-only and works with all interactive scenarios. It uses dependency-free click/tick cues. `contact` mode plays a short click when the Jacobian estimate crosses `--audio-contact-threshold` (`2 N` by default). `geiger` mode maps lateral contact force to sparse ticking: silence below `--audio-lateral-threshold`, faster ticks as lateral resistance approaches `--audio-lateral-max`. `both` combines the contact click with Geiger ticks. This v1 does not generate continuous pitch or embed audio into `run_recording.mp4`; if macOS `afplay` is unavailable, the run continues silently with a warning.
+
+#### 5. Peg-in-hole experiment variants
+
+Run a tight-clearance peg-in-hole trial:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive --hole-clearance-mm 0.5 --force-feedback
@@ -107,34 +126,21 @@ mjpython main.py --scenario peg_in_hole --interactive --hole-clearance-mm 0.5 --
 
 `--hole-clearance-mm` controls total peg/hole clearance. The default is `8.0 mm`, matching the original scene. Useful experiment values are `8.0`, `2.0`, `1.0`, and `0.5`; at sub-millimeter clearance, small lateral offsets become hard to diagnose visually, so force patterns become more informative.
 
-Enable **audio force feedback**:
-
-```bash
-mjpython main.py --scenario peg_in_hole --interactive --hole-clearance-mm 1.0 --audio-feedback --audio-mode both
-mjpython main.py --scenario push_block --interactive --audio-feedback --audio-mode both
-mjpython main.py --scenario hit_floor --interactive --audio-feedback --audio-mode both
-mjpython main.py --scenario peg_in_hole --interactive --occluded-task --hole-clearance-mm 1.0 --audio-feedback --audio-mode both
-```
-
-`--audio-feedback` is live-only and works with all interactive scenarios. It uses dependency-free click/tick cues. `contact` mode plays a short click when the Jacobian estimate crosses `--audio-contact-threshold` (`2 N` by default). `geiger` mode maps lateral contact force to sparse ticking: silence below `--audio-lateral-threshold`, faster ticks as lateral resistance approaches `--audio-lateral-max`. `both` combines the contact click with Geiger ticks. This v1 does not generate continuous pitch or embed audio into `run_recording.mp4`; if macOS `afplay` is unavailable, the run continues silently with a warning.
-
-Make the **peg and socket walls semi-transparent** when inspecting internal contacts:
+Make the peg and socket walls semi-transparent when inspecting internal contacts:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual both --peg-alpha 0.45 --socket-alpha 0.45
 ```
 
-Run the **occluded peg-in-hole experiment**:
+Run the occluded peg-in-hole experiment:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive --occluded-task --force-feedback --force-visual both --peg-alpha 0.45 --socket-alpha 0.45
 ```
 
-`--occluded-task` adds an opaque visual-only wall in front of a slightly deeper, off-center socket, plus a hidden collision pad at the bottom of the hole. The wall is wider than the socket footprint and offset from the hole center, so its visual midpoint is not a reliable alignment cue. The wall blocks the user's line of sight without affecting physics. The hidden pad detects successful insertion; after sustained peg-pad contact, the run prints a success message, updates the HUD, records a final frame when video recording is enabled, and exits cleanly. This success-stop behavior works with plain `--record-video`; `--record-force-feedback` only controls whether force overlay geoms appear in the saved MP4.
+`--occluded-task` adds an opaque visual-only wall in front of a slightly deeper, off-center socket, plus a hidden collision pad at the bottom of the hole. The wall blocks the user's line of sight without affecting physics, and the selected arrow/ring feedback is projected to a visible proxy position just in front of and above the wall. After sustained peg-pad contact, the run prints a success message, updates the HUD, records a final frame when video recording is enabled, and exits cleanly.
 
-When the occluded task starts, the live viewer camera is initialized to a wider front-on, near eye-level view that includes the starting peg and obstacle. Video recording uses a separate side/three-quarter observer camera for occluded trials, so the saved MP4 shows the obstacle, peg, and socket area rather than only the participant's blocked view.
-
-Enable the **experimental impedance cushion** during interactive peg insertion:
+Enable the experimental impedance cushion during interactive peg insertion:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual both --contact-cushion
@@ -142,7 +148,7 @@ mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-v
 
 The cushion activates after contact force crosses `--cushion-threshold` (`100 N` by default). While active, the arm position servos are commanded to the current joint positions to cancel the servo spring, and a torque-limited Cartesian spring/damper is applied through `J.T @ wrench`. You can tune it with `--impedance-kp`, `--impedance-dp`, `--impedance-kr`, `--impedance-dr`, and `--impedance-torque-limit`.
 
-Record a **video** of a run:
+#### 6. Video recording
 
 ```bash
 mjpython main.py --scenario push_block --record-video
@@ -152,15 +158,52 @@ mjpython main.py --scenario peg_in_hole --interactive --record-video
 mjpython main.py --scenario peg_in_hole --interactive --record-video --record-force-feedback --force-visual both
 ```
 
-`--record-force-feedback` includes the same visual feedback geoms in the saved video: the green idle marker before contact, plus the selected red/orange arrow, ring, or both during contact.
+`--record-force-feedback` includes the same visual feedback geoms in the saved video: the green idle marker before contact, plus the selected red/orange arrow, ring, or both during contact. Videos are encoded at `30 fps` against simulation time, so the saved MP4 duration should track the simulation timeline rather than how fast the viewer/render loop happened to run.
 
-Videos are encoded at `30 fps` against simulation time, so the saved MP4 duration should track the simulation timeline rather than how fast the viewer/render loop happened to run.
+When the occluded task starts, the live viewer camera is initialized to a wider front-on, near eye-level view that includes the starting peg and obstacle. Video recording uses a separate side/three-quarter observer camera for occluded trials, so the saved MP4 shows the obstacle, peg, and socket area rather than only the participant's blocked view.
 
 Show CLI options:
 
 ```bash
 python3 main.py --help
 ```
+
+### Keyboard Controls
+
+| Control | Meaning |
+| --- | --- |
+| Arrow keys | Move target in X/Y: north, south, east, west |
+| `9` / `8` | Raise / lower target in Z |
+| Page Up / Page Down | Also raise / lower target in Z, if your keyboard has them |
+| `,` / `.` | Open / close gripper |
+| `6` / `7` in `peg_in_hole` | Spin the downward-facing peg about the vertical insertion axis |
+| `[` / `]` with `--free-orientation` | Pitch the end effector in side-task teleop |
+| `-` / `=` with `--free-orientation` | Yaw the end effector in side-task teleop |
+| `6` / `7` with `--free-orientation` | Roll the end effector in side-task teleop |
+
+Avoid `I`, `J`, `K`, and `U` in the MuJoCo viewer because they toggle debug visualizations, not robot controls.
+
+### Flag Reference
+
+| Flag | Applies to | Purpose |
+| --- | --- | --- |
+| `--scenario` | All runs | Choose `peg_in_hole`, `push_block`, or `hit_floor`. |
+| `--interactive` | All scenarios | Enable keyboard teleoperation and live viewer control. |
+| `--free-orientation` | `push_block` / `hit_floor` with `--interactive` | Add pitch, yaw, and roll controls for side-task exploration. |
+| `--disable-policy` | Non-interactive runs | Load the scenario without applying its scripted motion policy. |
+| `--force-feedback` | Interactive runs | Show live visual force feedback. |
+| `--force-visual` | Visual feedback and recorded feedback | Choose `arrow`, `ring`, or `both`. |
+| `--audio-feedback` | Interactive runs | Enable live contact audio cues across all scenarios. |
+| `--audio-mode` | Audio feedback | Choose `contact`, `geiger`, or `both`. |
+| `--audio-contact-threshold` | Audio feedback | Set the Jacobian-estimate threshold for the contact click. |
+| `--audio-lateral-threshold`, `--audio-lateral-max`, `--audio-volume` | Audio feedback | Tune Geiger ticking thresholds and cue volume. |
+| `--record-video` | All scenarios | Save `run_recording.mp4` under `results/<scenario>/`. |
+| `--record-force-feedback` | Video recording | Include force-feedback overlay geoms in the MP4. |
+| `--hole-clearance-mm` | `peg_in_hole` | Set total peg/hole clearance in millimeters. |
+| `--peg-alpha`, `--socket-alpha` | `peg_in_hole` | Adjust peg and socket opacity for inspection. |
+| `--occluded-task` | `peg_in_hole` with `--interactive` | Hide the socket behind a visual wall for occlusion experiments. |
+| `--contact-cushion` | `peg_in_hole` with `--interactive` | Enable the experimental reactive impedance cushion. |
+| `--cushion-threshold`, `--impedance-*` | Contact cushion | Tune when the cushion activates and how stiff/damped it feels. |
 
 ## Outputs
 
