@@ -29,12 +29,12 @@ def parse_args():
     parser.add_argument(
         "--interactive",
         action="store_true",
-        help="Enable keyboard control (peg_in_hole only; requires mjpython on macOS)",
+        help="Enable keyboard control (requires mjpython on macOS)",
     )
     parser.add_argument(
         "--force-feedback",
         action="store_true",
-        help="Enable live force visual overlay (peg_in_hole + --interactive only)",
+        help="Enable live force visual overlay (--interactive only)",
     )
     parser.add_argument(
         "--force-visual",
@@ -50,7 +50,17 @@ def parse_args():
     parser.add_argument(
         "--record-force-feedback",
         action="store_true",
-        help="Include force feedback overlay geoms in --record-video output (peg_in_hole only)",
+        help="Include force feedback overlay geoms in --record-video output",
+    )
+    parser.add_argument(
+        "--disable-policy",
+        action="store_true",
+        help="Disable scripted scenario motion in non-interactive runs",
+    )
+    parser.add_argument(
+        "--free-orientation",
+        action="store_true",
+        help="Allow interactive side-task teleop to control end-effector pitch/yaw/roll",
     )
     parser.add_argument(
         "--occluded-task",
@@ -66,7 +76,7 @@ def parse_args():
     parser.add_argument(
         "--audio-feedback",
         action="store_true",
-        help="Enable live audio force cues (peg_in_hole + --interactive only)",
+        help="Enable live audio force cues (--interactive only)",
     )
     parser.add_argument(
         "--audio-mode",
@@ -165,6 +175,8 @@ if __name__ == "__main__":
         force_visual=args.force_visual,
         record_video=args.record_video,
         record_force_feedback=args.record_force_feedback,
+        disable_policy=args.disable_policy,
+        free_orientation=args.free_orientation,
         occluded_task=args.occluded_task,
         hole_clearance_mm=args.hole_clearance_mm,
         audio_feedback=args.audio_feedback,

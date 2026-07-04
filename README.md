@@ -6,9 +6,9 @@ The goal is to investigate whether Jacobian-based force estimation is accurate a
 
 ## Scenarios
 
-- `peg_in_hole`: the primary task. Adds a peg, socket, IK target, and optional keyboard teleoperation for insertion practice with visual and audio force-feedback experiments.
-- `push_block`: a side task that moves the gripper into a free block and compares block contact force against the virtual force estimate.
-- `hit_floor`: a side task that lowers the gripper toward the floor and compares floor contact force against the virtual force estimate.
+- `peg_in_hole`: the primary task. Adds a peg, socket, IK target, and keyboard teleoperation for insertion practice with visual and audio force-feedback experiments.
+- `push_block`: a side task that moves the gripper into a free block and compares block contact force against the virtual force estimate. It can also be run with keyboard teleoperation to freely explore contact, with optional free end-effector orientation.
+- `hit_floor`: a side task that lowers the gripper toward the floor and compares floor contact force against the virtual force estimate. It can also be run with keyboard teleoperation to freely explore contact, with optional free end-effector orientation.
 
 ## Setup
 
@@ -26,7 +26,7 @@ The Franka model is loaded from:
 mujoco_menagerie/franka_emika_panda/scene.xml
 ```
 
-On macOS, MuJoCo viewer workflows that use the passive viewer, including interactive peg control and video recording, may need `mjpython` instead of regular `python3`.
+On macOS, MuJoCo viewer workflows that use the passive viewer, including interactive keyboard control and video recording, may need `mjpython` instead of regular `python3`.
 
 ## Usage
 
@@ -50,10 +50,35 @@ Run the **interactive peg-in-hole task**:
 mjpython main.py --scenario peg_in_hole --interactive
 ```
 
-Enable **live force feedback** during interactive peg insertion:
+Run the **side tasks with keyboard teleoperation**:
+
+```bash
+mjpython main.py --scenario push_block --interactive
+mjpython main.py --scenario hit_floor --interactive
+```
+
+Side-task teleoperation is position-only by default. Add **free orientation** when you want to rotate the end effector during exploration:
+
+```bash
+mjpython main.py --scenario push_block --interactive --free-orientation
+mjpython main.py --scenario hit_floor --interactive --free-orientation
+```
+
+With `--free-orientation`, arrow keys still move in X/Y, `9`/`8` move in Z, `[`/`]` control pitch, `-`/`=` control yaw, and `6`/`7` control roll. `peg_in_hole` intentionally does not use this mode: its peg stays constrained to face downward, with `6`/`7` only spinning the peg about the vertical insertion axis.
+
+Disable the **scripted policy** in a non-interactive run:
+
+```bash
+mjpython main.py --scenario push_block --disable-policy
+mjpython main.py --scenario hit_floor --disable-policy
+```
+
+Enable **live force feedback** during an interactive task:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive --force-feedback
+mjpython main.py --scenario push_block --interactive --force-feedback
+mjpython main.py --scenario hit_floor --interactive --force-feedback
 ```
 
 Choose the **force-feedback visual**:
@@ -64,9 +89,11 @@ mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-v
 mjpython main.py --scenario peg_in_hole --interactive --force-feedback --force-visual both
 ```
 
-`arrow` draws a red/orange guidance vector at the peg contact point. For peg-in-hole rim contact, it points toward the socket's vertical center axis so the cue behaves like "move inward toward the hole"; if the contact is purely vertical compression, it falls back to the vertical reaction force. `ring` draws a red/orange ring at the selected contact surface, and `both` draws both overlays. The size of each overlay uses a log scale from roughly `10 N` to `1000 N`, so mid-range forces remain visually distinguishable without huge spikes dominating the view.
+The same `--force-visual` modes work with `push_block` and `hit_floor`.
 
-In the simulator, these visual overlays are contact-data based rather than Jacobian-estimate based. MuJoCo provides the contact point, contact frame, and contact force, so the ring can show where contact occurs and the arrow can turn rim contact into a hole-center guidance cue. The Jacobian estimate is still logged and plotted for comparison, but by itself it gives an end-effector wrench estimate rather than a ground-truth contact point on the hole wall.
+`arrow` draws a red/orange raw force vector at the strongest target contact point. Its direction is the measured MuJoCo contact-force direction in world coordinates, with a consistent sign on the robot/tool side of the contact. `ring` draws a red/orange ring at the selected contact surface, and `both` draws both overlays. The size of each overlay uses a log scale from roughly `10 N` to `1000 N`, so mid-range forces remain visually distinguishable without huge spikes dominating the view.
+
+In the simulator, these visual overlays are contact-data based rather than Jacobian-estimate based. MuJoCo provides the contact point, contact frame, and contact force, so the ring can show where contact occurs and the arrow can show the raw contact-force vector. The Jacobian estimate is still logged and plotted for comparison, but by itself it gives an end-effector wrench estimate rather than a ground-truth contact point on the contacted surface.
 
 In `--occluded-task`, the socket contact is hidden behind the opaque wall, so the selected arrow/ring feedback is projected to a visible proxy position just in front of and above the wall. The cue still comes from hidden contact data, but it is displayed as feedback rather than as physically occluded contact geometry.
 
@@ -84,10 +111,12 @@ Enable **audio force feedback**:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive --hole-clearance-mm 1.0 --audio-feedback --audio-mode both
+mjpython main.py --scenario push_block --interactive --audio-feedback --audio-mode both
+mjpython main.py --scenario hit_floor --interactive --audio-feedback --audio-mode both
 mjpython main.py --scenario peg_in_hole --interactive --occluded-task --hole-clearance-mm 1.0 --audio-feedback --audio-mode both
 ```
 
-`--audio-feedback` is live-only and uses dependency-free click/tick cues. `contact` mode plays a short click when the Jacobian estimate crosses `--audio-contact-threshold` (`2 N` by default). `geiger` mode maps lateral contact force to sparse ticking: silence below `--audio-lateral-threshold`, faster ticks as lateral resistance approaches `--audio-lateral-max`. `both` combines the contact click with Geiger ticks. This v1 does not generate continuous pitch or embed audio into `run_recording.mp4`; if macOS `afplay` is unavailable, the run continues silently with a warning.
+`--audio-feedback` is live-only and works with all interactive scenarios. It uses dependency-free click/tick cues. `contact` mode plays a short click when the Jacobian estimate crosses `--audio-contact-threshold` (`2 N` by default). `geiger` mode maps lateral contact force to sparse ticking: silence below `--audio-lateral-threshold`, faster ticks as lateral resistance approaches `--audio-lateral-max`. `both` combines the contact click with Geiger ticks. This v1 does not generate continuous pitch or embed audio into `run_recording.mp4`; if macOS `afplay` is unavailable, the run continues silently with a warning.
 
 Make the **peg and socket walls semi-transparent** when inspecting internal contacts:
 
@@ -117,6 +146,8 @@ Record a **video** of a run:
 
 ```bash
 mjpython main.py --scenario push_block --record-video
+mjpython main.py --scenario push_block --record-video --record-force-feedback --force-visual both
+mjpython main.py --scenario hit_floor --record-video --record-force-feedback --force-visual both
 mjpython main.py --scenario peg_in_hole --interactive --record-video
 mjpython main.py --scenario peg_in_hole --interactive --record-video --record-force-feedback --force-visual both
 ```
@@ -151,6 +182,8 @@ Reference outputs are checked in under `sample_results/`.
 main.py                         CLI entrypoint
 franka_force/config.py          Paths, scenario names, video defaults
 franka_force/env.py             Shared MuJoCo environment and viewer orchestration
+franka_force/teleop.py          Shared keyboard teleoperation and IK target helpers
+franka_force/force_visuals.py   Shared raw-force overlay drawing
 franka_force/recording.py       Offscreen MP4 recording helper
 franka_force/plotting.py        CSV filtering and plot generation
 franka_force/scenarios/         Scenario-specific model, control, and contact logic

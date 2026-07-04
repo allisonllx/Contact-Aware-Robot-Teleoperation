@@ -24,6 +24,7 @@ from .config import (
     MODEL_PATH,
     RESULTS_DIR,
 )
+from . import force_visuals, teleop
 from .plotting import plot_force_comparison
 from .recording import VideoRecorder
 from .scenarios import SCENARIOS, get_scenario
@@ -38,6 +39,8 @@ class FrankaForceEnv:
         force_visual="arrow",
         record_video=False,
         record_force_feedback=False,
+        disable_policy=False,
+        free_orientation=False,
         occluded_task=False,
         hole_clearance_mm=DEFAULT_HOLE_CLEARANCE_MM,
         audio_feedback=False,
@@ -70,6 +73,8 @@ class FrankaForceEnv:
         self.force_visual = force_visual
         self.record_video = record_video
         self.record_force_feedback = record_force_feedback
+        self.disable_policy = disable_policy
+        self.free_orientation = free_orientation
         self.occluded_task = occluded_task
         self.hole_clearance_mm = hole_clearance_mm
         self.audio_feedback = audio_feedback
@@ -90,16 +95,18 @@ class FrankaForceEnv:
 
         if force_feedback and not interactive:
             raise ValueError("force_feedback requires interactive=True")
+        if free_orientation and not interactive:
+            raise ValueError("free_orientation requires interactive=True")
+        if free_orientation and scenario == "peg_in_hole":
+            raise ValueError("free_orientation is for side tasks; peg_in_hole keeps the peg facing down")
         if record_force_feedback and not record_video:
             raise ValueError("record_force_feedback requires record_video=True")
-        if record_force_feedback and scenario != "peg_in_hole":
-            raise ValueError("record_force_feedback is only supported for peg_in_hole")
         if occluded_task and (scenario != "peg_in_hole" or not interactive):
             raise ValueError("occluded_task requires scenario='peg_in_hole' and interactive=True")
-        if audio_feedback and (scenario != "peg_in_hole" or not interactive):
-            raise ValueError("audio_feedback requires scenario='peg_in_hole' and interactive=True")
+        if audio_feedback and not interactive:
+            raise ValueError("audio_feedback requires interactive=True")
         if interactive and not self.scenario_impl.supports_interactive:
-            raise ValueError("interactive mode is only supported for peg_in_hole")
+            raise ValueError(f"interactive mode is not supported for scenario={scenario!r}")
         if contact_cushion and (scenario != "peg_in_hole" or not interactive):
             raise ValueError("contact_cushion requires scenario='peg_in_hole' and interactive=True")
         if hole_clearance_mm <= 0.0:
@@ -191,6 +198,8 @@ class FrankaForceEnv:
                 volume=self.audio_volume,
             )
 
+        teleop.initialize_state(self)
+        force_visuals.initialize_state(self)
         self.scenario_impl.initialize_state(self)
 
         # Telemetry CSV Setup
@@ -234,6 +243,8 @@ class FrankaForceEnv:
 
     def _apply_control_policy(self):
         """Factory Method: Changes how the arm moves depending on the task goal."""
+        if self.disable_policy and not self.interactive:
+            return
         self.scenario_impl.apply_control(self)
 
     def _get_active_gripper_body_ids(self):
@@ -377,7 +388,7 @@ class FrankaForceEnv:
         self.latest_audio_lateral_force = state.lateral_force
 
     def _force_feedback_magnitude(self):
-        return max(self.latest_f_est, self.latest_f_true)
+        return max(self.latest_contact_force, self.latest_f_est, self.latest_f_true)
 
     def _force_feedback_overlay_enabled(self):
         return self.force_feedback or self.record_force_feedback
