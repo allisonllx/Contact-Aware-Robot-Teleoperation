@@ -162,6 +162,24 @@ mjpython main.py --scenario peg_in_hole --interactive --record-video --record-fo
 
 When the occluded task starts, the live viewer camera is initialized to a wider front-on, near eye-level view that includes the starting peg and obstacle. Video recording uses a separate side/three-quarter observer camera for occluded trials, so the saved MP4 shows the obstacle, peg, and socket area rather than only the participant's blocked view.
 
+#### 7. Analysis summary
+
+After running one or more scenarios, compute force-estimation and task/safety metrics:
+
+```bash
+python3 analysis.py
+```
+
+This reads each scenario's filtered CSV when available, falling back to the raw CSV otherwise, and writes `results/force_analysis_summary.csv`. The summary includes contact-only MAE, MSE, RMSE, bias, normalized error, 95th-percentile and peak absolute error, plus task/safety metrics such as completion time, peak contact force, contact duration, force impulse, and time above the selected force threshold.
+
+Useful options:
+
+```bash
+python3 analysis.py --scenarios peg_in_hole push_block
+python3 analysis.py --source raw --include-anomalies
+python3 analysis.py --force-threshold 50
+```
+
 Show CLI options:
 
 ```bash
@@ -217,11 +235,14 @@ Each run writes artifacts under `results/<scenario>/`:
 - `force_comparison_contact_only_filtered.png`: contact-only filtered comparison.
 - `run_recording.mp4`: video output when `--record-video` is used.
 
+Running `python3 analysis.py` writes `results/force_analysis_summary.csv`, a cross-scenario summary of estimation error and task/safety metrics.
+
 Reference outputs are checked in under `sample_results/`.
 
 ## Project Layout
 
 ```text
+analysis.py                     Cross-scenario force estimation analysis
 main.py                         CLI entrypoint
 franka_force/config.py          Paths, scenario names, video defaults
 franka_force/env.py             Shared MuJoCo environment and viewer orchestration
