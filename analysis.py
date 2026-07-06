@@ -28,6 +28,11 @@ SUMMARY_COLUMNS = [
     "task_success",
     "completion_time_s",
     "hole_clearance_mm",
+    "occluded_hole_randomized",
+    "occluded_hole_x_m",
+    "occluded_hole_y_m",
+    "occluded_hole_offset_x_m",
+    "occluded_hole_offset_y_m",
     "audio_feedback_enabled",
     "cushion_used",
     "mean_ground_truth_contact_n",
@@ -160,6 +165,11 @@ def analyze_scenario(scenario, results_dir, source, force_threshold, include_ano
     audio_feedback = optional_bool_column(rows, columns, "Audio Feedback")
     cushion_active = optional_bool_column(rows, columns, "Cushion Active")
     hole_clearance = optional_float_column(rows, columns, "Hole Clearance (mm)", math.nan)
+    occluded_hole_randomized = optional_bool_column(rows, columns, "Occluded Hole Randomized")
+    occluded_hole_x = optional_float_column(rows, columns, "Occluded Hole X (m)", math.nan)
+    occluded_hole_y = optional_float_column(rows, columns, "Occluded Hole Y (m)", math.nan)
+    occluded_hole_offset_x = optional_float_column(rows, columns, "Occluded Hole Offset X (m)", math.nan)
+    occluded_hole_offset_y = optional_float_column(rows, columns, "Occluded Hole Offset Y (m)", math.nan)
 
     summary.update({
         "samples_total": len(rows),
@@ -173,6 +183,11 @@ def analyze_scenario(scenario, results_dir, source, force_threshold, include_ano
         "task_success": int(any(task_success)),
         "completion_time_s": first_time(times, task_success),
         "hole_clearance_mm": finite_median(hole_clearance),
+        "occluded_hole_randomized": int(any(occluded_hole_randomized)),
+        "occluded_hole_x_m": finite_median(occluded_hole_x),
+        "occluded_hole_y_m": finite_median(occluded_hole_y),
+        "occluded_hole_offset_x_m": finite_median(occluded_hole_offset_x),
+        "occluded_hole_offset_y_m": finite_median(occluded_hole_offset_y),
         "audio_feedback_enabled": int(any(audio_feedback)),
         "cushion_used": int(any(cushion_active)),
         "mean_ground_truth_contact_n": mean_or_blank(select(f_true, contact_clean)),

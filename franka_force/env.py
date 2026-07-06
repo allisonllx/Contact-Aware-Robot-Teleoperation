@@ -18,6 +18,8 @@ from .config import (
     DEFAULT_IMPEDANCE_KP,
     DEFAULT_IMPEDANCE_KR,
     DEFAULT_IMPEDANCE_TORQUE_LIMIT,
+    DEFAULT_OCCLUDED_HOLE_X_RANGE,
+    DEFAULT_OCCLUDED_HOLE_Y_RANGE,
     DEFAULT_PEG_ALPHA,
     DEFAULT_SOCKET_ALPHA,
     FORCE_VISUAL_MODES,
@@ -42,6 +44,10 @@ class FrankaForceEnv:
         disable_policy=False,
         free_orientation=False,
         occluded_task=False,
+        randomize_occluded_hole=False,
+        occluded_hole_x_range=DEFAULT_OCCLUDED_HOLE_X_RANGE,
+        occluded_hole_y_range=DEFAULT_OCCLUDED_HOLE_Y_RANGE,
+        occluded_hole_seed=None,
         hole_clearance_mm=DEFAULT_HOLE_CLEARANCE_MM,
         audio_feedback=False,
         audio_mode="both",
@@ -76,6 +82,12 @@ class FrankaForceEnv:
         self.disable_policy = disable_policy
         self.free_orientation = free_orientation
         self.occluded_task = occluded_task
+        self.randomize_occluded_hole = randomize_occluded_hole
+        self.occluded_hole_x_range = tuple(occluded_hole_x_range)
+        self.occluded_hole_y_range = tuple(occluded_hole_y_range)
+        self.occluded_hole_seed = occluded_hole_seed
+        self.occluded_hole_offset = np.zeros(3)
+        self.occluded_hole_world_pos = np.array([np.nan, np.nan, np.nan])
         self.hole_clearance_mm = hole_clearance_mm
         self.audio_feedback = audio_feedback
         self.audio_mode = audio_mode
@@ -103,6 +115,10 @@ class FrankaForceEnv:
             raise ValueError("record_force_feedback requires record_video=True")
         if occluded_task and (scenario != "peg_in_hole" or not interactive):
             raise ValueError("occluded_task requires scenario='peg_in_hole' and interactive=True")
+        if randomize_occluded_hole and not occluded_task:
+            raise ValueError("randomize_occluded_hole requires occluded_task=True")
+        self._validate_range("occluded_hole_x_range", self.occluded_hole_x_range)
+        self._validate_range("occluded_hole_y_range", self.occluded_hole_y_range)
         if audio_feedback and not interactive:
             raise ValueError("audio_feedback requires interactive=True")
         if interactive and not self.scenario_impl.supports_interactive:
@@ -129,6 +145,14 @@ class FrankaForceEnv:
             raise ValueError("peg_alpha must be between 0.0 and 1.0")
         if not 0.0 <= socket_alpha <= 1.0:
             raise ValueError("socket_alpha must be between 0.0 and 1.0")
+
+        if self.randomize_occluded_hole:
+            rng = np.random.default_rng(self.occluded_hole_seed)
+            self.occluded_hole_offset = np.array([
+                rng.uniform(*self.occluded_hole_x_range),
+                rng.uniform(*self.occluded_hole_y_range),
+                0.0,
+            ])
 
         self.results_dir = RESULTS_DIR / scenario
         self.results_dir.mkdir(parents=True, exist_ok=True)
@@ -160,6 +184,11 @@ class FrankaForceEnv:
         self.success_contact_history = []
         self.success_hold_time_history = []
         self.hole_clearance_history = []
+        self.occluded_hole_randomized_history = []
+        self.occluded_hole_x_history = []
+        self.occluded_hole_y_history = []
+        self.occluded_hole_offset_x_history = []
+        self.occluded_hole_offset_y_history = []
         self.audio_feedback_history = []
         self.audio_contact_event_history = []
         self.audio_tick_rate_history = []
@@ -221,6 +250,11 @@ class FrankaForceEnv:
             "Success Contact",
             "Success Hold Time",
             "Hole Clearance (mm)",
+            "Occluded Hole Randomized",
+            "Occluded Hole X (m)",
+            "Occluded Hole Y (m)",
+            "Occluded Hole Offset X (m)",
+            "Occluded Hole Offset Y (m)",
             "Audio Feedback",
             "Audio Contact Event",
             "Audio Tick Rate (Hz)",
@@ -234,6 +268,15 @@ class FrankaForceEnv:
         self.hand_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "hand")
         self.scenario_impl.resolve_ids(self)
         self.scenario_impl.after_model_init(self)
+
+    def _validate_range(self, name, values):
+        if len(values) != 2:
+            raise ValueError(f"{name} must contain exactly two values")
+        lower, upper = values
+        if not np.isfinite(lower) or not np.isfinite(upper):
+            raise ValueError(f"{name} values must be finite")
+        if lower > upper:
+            raise ValueError(f"{name} minimum must be <= maximum")
 
     def _build_model(self):
         """Load scene.xml from disk (so includes resolve), then inject scenario extras."""
@@ -332,6 +375,11 @@ class FrankaForceEnv:
             self.success_hold_time_history.append(self.success_hold_time)
             audio_contact_event = self.audio_contact_event_since_sample
             self.hole_clearance_history.append(self.hole_clearance_mm)
+            self.occluded_hole_randomized_history.append(self.randomize_occluded_hole)
+            self.occluded_hole_x_history.append(self.occluded_hole_world_pos[0])
+            self.occluded_hole_y_history.append(self.occluded_hole_world_pos[1])
+            self.occluded_hole_offset_x_history.append(self.occluded_hole_offset[0])
+            self.occluded_hole_offset_y_history.append(self.occluded_hole_offset[1])
             self.audio_feedback_history.append(self.audio_feedback)
             self.audio_contact_event_history.append(audio_contact_event)
             self.audio_tick_rate_history.append(self.latest_audio_tick_rate)
@@ -353,6 +401,11 @@ class FrankaForceEnv:
                 int(self.success_contact),
                 self.success_hold_time,
                 self.hole_clearance_mm,
+                int(self.randomize_occluded_hole),
+                self.occluded_hole_world_pos[0],
+                self.occluded_hole_world_pos[1],
+                self.occluded_hole_offset[0],
+                self.occluded_hole_offset[1],
                 int(self.audio_feedback),
                 int(audio_contact_event),
                 self.latest_audio_tick_rate,

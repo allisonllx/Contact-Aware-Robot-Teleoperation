@@ -27,6 +27,11 @@ def plot_force_comparison(env):
     success_contact = _history_array(env, "success_contact_history", len(t), dtype=bool)
     success_hold_time = _history_array(env, "success_hold_time_history", len(t), dtype=float)
     hole_clearance = _history_array(env, "hole_clearance_history", len(t), dtype=float)
+    occluded_hole_randomized = _history_array(env, "occluded_hole_randomized_history", len(t), dtype=bool)
+    occluded_hole_x = _history_array(env, "occluded_hole_x_history", len(t), dtype=float)
+    occluded_hole_y = _history_array(env, "occluded_hole_y_history", len(t), dtype=float)
+    occluded_hole_offset_x = _history_array(env, "occluded_hole_offset_x_history", len(t), dtype=float)
+    occluded_hole_offset_y = _history_array(env, "occluded_hole_offset_y_history", len(t), dtype=float)
     audio_feedback = _history_array(env, "audio_feedback_history", len(t), dtype=bool)
     audio_contact_event = _history_array(env, "audio_contact_event_history", len(t), dtype=bool)
     audio_tick_rate = _history_array(env, "audio_tick_rate_history", len(t), dtype=float)
@@ -47,6 +52,11 @@ def plot_force_comparison(env):
         success_contact,
         success_hold_time,
         hole_clearance,
+        occluded_hole_randomized,
+        occluded_hole_x,
+        occluded_hole_y,
+        occluded_hole_offset_x,
+        occluded_hole_offset_y,
         audio_feedback,
         audio_contact_event,
         audio_tick_rate,
@@ -133,6 +143,11 @@ def _write_filtered_csv(
     success_contact,
     success_hold_time,
     hole_clearance,
+    occluded_hole_randomized,
+    occluded_hole_x,
+    occluded_hole_y,
+    occluded_hole_offset_x,
+    occluded_hole_offset_y,
     audio_feedback,
     audio_contact_event,
     audio_tick_rate,
@@ -155,6 +170,11 @@ def _write_filtered_csv(
             "Success Contact",
             "Success Hold Time",
             "Hole Clearance (mm)",
+            "Occluded Hole Randomized",
+            "Occluded Hole X (m)",
+            "Occluded Hole Y (m)",
+            "Occluded Hole Offset X (m)",
+            "Occluded Hole Offset Y (m)",
             "Audio Feedback",
             "Audio Contact Event",
             "Audio Tick Rate (Hz)",
@@ -176,6 +196,11 @@ def _write_filtered_csv(
                 int(success_contact[i]),
                 success_hold_time[i],
                 hole_clearance[i],
+                int(occluded_hole_randomized[i]),
+                occluded_hole_x[i],
+                occluded_hole_y[i],
+                occluded_hole_offset_x[i],
+                occluded_hole_offset_y[i],
                 int(audio_feedback[i]),
                 int(audio_contact_event[i]),
                 audio_tick_rate[i],

@@ -13,6 +13,8 @@ from franka_force.config import (
     DEFAULT_IMPEDANCE_KP,
     DEFAULT_IMPEDANCE_KR,
     DEFAULT_IMPEDANCE_TORQUE_LIMIT,
+    DEFAULT_OCCLUDED_HOLE_X_RANGE,
+    DEFAULT_OCCLUDED_HOLE_Y_RANGE,
     DEFAULT_PEG_ALPHA,
     DEFAULT_SOCKET_ALPHA,
 )
@@ -66,6 +68,33 @@ def parse_args():
         "--occluded-task",
         action="store_true",
         help="Enable peg_in_hole visual-occlusion experiment with hidden success pad",
+    )
+    parser.add_argument(
+        "--randomize-occluded-hole",
+        action="store_true",
+        help="Randomize the hidden socket position for --occluded-task while keeping the opaque blocker fixed",
+    )
+    parser.add_argument(
+        "--occluded-hole-x-range",
+        type=float,
+        nargs=2,
+        metavar=("MIN", "MAX"),
+        default=DEFAULT_OCCLUDED_HOLE_X_RANGE,
+        help="Hidden socket X offset range in meters around the default occluded socket center",
+    )
+    parser.add_argument(
+        "--occluded-hole-y-range",
+        type=float,
+        nargs=2,
+        metavar=("MIN", "MAX"),
+        default=DEFAULT_OCCLUDED_HOLE_Y_RANGE,
+        help="Hidden socket Y offset range in meters around the default occluded socket center",
+    )
+    parser.add_argument(
+        "--occluded-hole-seed",
+        type=int,
+        default=None,
+        help="Optional random seed for reproducible hidden socket placement",
     )
     parser.add_argument(
         "--hole-clearance-mm",
@@ -178,6 +207,10 @@ if __name__ == "__main__":
         disable_policy=args.disable_policy,
         free_orientation=args.free_orientation,
         occluded_task=args.occluded_task,
+        randomize_occluded_hole=args.randomize_occluded_hole,
+        occluded_hole_x_range=args.occluded_hole_x_range,
+        occluded_hole_y_range=args.occluded_hole_y_range,
+        occluded_hole_seed=args.occluded_hole_seed,
         hole_clearance_mm=args.hole_clearance_mm,
         audio_feedback=args.audio_feedback,
         audio_mode=args.audio_mode,

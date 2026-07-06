@@ -33,6 +33,8 @@ class PegInHoleScenario(Scenario):
         env.cushion_release_threshold = env.cushion_threshold * 0.60
         env._occluded_success_announced = False
         env._occluded_recording_camera = None
+        if env.occluded_task:
+            env.occluded_hole_world_pos = self._socket_origin(env).copy()
 
     def augment_model_spec(self, env, spec):
         hand_body = spec.body("hand")
@@ -79,16 +81,15 @@ class PegInHoleScenario(Scenario):
         )
 
         if env.occluded_task:
-            self._add_occluded_task_geoms(env, socket_base)
+            self._add_occluded_task_geoms(env, spec, socket_base)
 
         teleop.add_target_marker(spec)
         teleop.add_floor_compass(spec, origin=[0.38, 0.0, 0.0])
 
-    def _add_occluded_task_geoms(self, env, socket_base):
+    def _add_occluded_task_geoms(self, env, spec, socket_base):
         occluder_height = self._occluder_height()
-        occluder_y = self._occluder_local_y()
         hole_gap = self._hole_gap(env)
-        socket_base.add_geom(
+        spec.worldbody.add_geom(
             name="occlusion_wall_geom",
             type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[
@@ -96,7 +97,7 @@ class PegInHoleScenario(Scenario):
                 self.occluder_thick,
                 occluder_height / 2.0,
             ],
-            pos=[self.occluder_x_offset, occluder_y, occluder_height / 2.0],
+            pos=list(self._occluder_world_pos()),
             rgba=[0.08, 0.08, 0.08, 1.0],
             contype=0,
             conaffinity=0,
@@ -195,6 +196,12 @@ class PegInHoleScenario(Scenario):
         if env.occluded_task:
             print("Occluded task: ON")
             print("  Wider opaque front wall hides an off-center socket and hidden success pad.")
+            if env.randomize_occluded_hole:
+                print(
+                    "  Hidden socket randomization: ON "
+                    f"(X {env.occluded_hole_x_range[0]:+.3f} to {env.occluded_hole_x_range[1]:+.3f} m, "
+                    f"Y {env.occluded_hole_y_range[0]:+.3f} to {env.occluded_hole_y_range[1]:+.3f} m)."
+                )
             print("  Live camera starts wide front-on; recordings use a side observer camera.")
             print(f"  Success requires {self.success_hold_required:.2f}s of sustained peg-pad contact.")
         if env.audio_feedback:
@@ -219,7 +226,7 @@ class PegInHoleScenario(Scenario):
         if env.occluded_task:
             self._set_free_camera(
                 camera,
-                lookat=self._socket_origin(env) + np.array([0.055, -0.02, 0.18]),
+                lookat=self._nominal_occluded_socket_origin() + np.array([0.055, -0.02, 0.18]),
                 distance=0.56,
                 azimuth=90.0,
                 elevation=-3.0,
@@ -232,7 +239,7 @@ class PegInHoleScenario(Scenario):
             env._occluded_recording_camera = mujoco.MjvCamera()
             self._set_free_camera(
                 env._occluded_recording_camera,
-                lookat=self._socket_origin(env) + np.array([0.0, -0.005, 0.07]),
+                lookat=self._nominal_occluded_socket_origin() + np.array([0.0, -0.005, 0.07]),
                 distance=0.52,
                 azimuth=135.0,
                 elevation=-25.0,
@@ -257,8 +264,19 @@ class PegInHoleScenario(Scenario):
 
     def _socket_origin(self, env):
         if env.occluded_task:
-            return self.socket_origin + self.occluded_socket_offset
+            return self._nominal_occluded_socket_origin() + env.occluded_hole_offset
         return self.socket_origin
+
+    def _nominal_occluded_socket_origin(self):
+        return self.socket_origin + self.occluded_socket_offset
+
+    def _occluder_world_pos(self):
+        origin = self._nominal_occluded_socket_origin()
+        return origin + np.array([
+            self.occluder_x_offset,
+            self._occluder_local_y(),
+            self._occluder_height() / 2.0,
+        ])
 
     def _hole_gap(self, env):
         return self._hole_gap_from_clearance(env.hole_clearance_mm)
@@ -279,7 +297,7 @@ class PegInHoleScenario(Scenario):
         )
 
     def _occluded_feedback_y(self, env):
-        socket_origin = self._socket_origin(env)
+        socket_origin = self._nominal_occluded_socket_origin()
         return (
             socket_origin[1]
             + self._occluder_local_y()
