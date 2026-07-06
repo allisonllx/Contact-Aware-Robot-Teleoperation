@@ -130,6 +130,38 @@ def analyze_scenario(scenario, results_dir, source, force_threshold, include_ano
             force_threshold=force_threshold,
         )
 
+    return analyze_log_file(
+        log_path=log_path,
+        scenario=scenario,
+        force_threshold=force_threshold,
+        include_anomalies=include_anomalies,
+    )
+
+
+def analyze_result_dir(
+    result_dir,
+    scenario,
+    source="auto",
+    force_threshold=DEFAULT_FORCE_THRESHOLD_N,
+    include_anomalies=False,
+):
+    log_path = select_log_path_from_dir(Path(result_dir), source)
+    if log_path is None:
+        return empty_summary(
+            scenario,
+            status="missing_csv",
+            force_threshold=force_threshold,
+        )
+
+    return analyze_log_file(
+        log_path=log_path,
+        scenario=scenario,
+        force_threshold=force_threshold,
+        include_anomalies=include_anomalies,
+    )
+
+
+def analyze_log_file(log_path, scenario, force_threshold, include_anomalies):
     with log_path.open(newline="") as f:
         rows = list(csv.DictReader(f))
 
@@ -206,9 +238,12 @@ def analyze_scenario(scenario, results_dir, source, force_threshold, include_ano
 
 
 def select_log_path(results_dir, scenario, source):
-    scenario_dir = results_dir / scenario
-    filtered_path = scenario_dir / FILTERED_LOG_NAME
-    raw_path = scenario_dir / RAW_LOG_NAME
+    return select_log_path_from_dir(results_dir / scenario, source)
+
+
+def select_log_path_from_dir(result_dir, source):
+    filtered_path = result_dir / FILTERED_LOG_NAME
+    raw_path = result_dir / RAW_LOG_NAME
 
     if source == "filtered":
         return filtered_path if filtered_path.exists() else None

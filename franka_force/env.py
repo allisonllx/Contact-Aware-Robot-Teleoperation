@@ -1,4 +1,5 @@
 import csv
+from pathlib import Path
 
 import mujoco
 import mujoco.viewer
@@ -64,6 +65,7 @@ class FrankaForceEnv:
         impedance_torque_limit=DEFAULT_IMPEDANCE_TORQUE_LIMIT,
         peg_alpha=DEFAULT_PEG_ALPHA,
         socket_alpha=DEFAULT_SOCKET_ALPHA,
+        results_dir=None,
     ):
         if scenario not in SCENARIOS:
             raise ValueError(f"Unknown scenario: {scenario}. Choose from {SCENARIOS}")
@@ -154,7 +156,7 @@ class FrankaForceEnv:
                 0.0,
             ])
 
-        self.results_dir = RESULTS_DIR / scenario
+        self.results_dir = Path(results_dir) if results_dir is not None else RESULTS_DIR / scenario
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.telemetry_path = self.results_dir / "force_verification_log.csv"
         self.telemetry_filtered_path = self.results_dir / "force_verification_log_filtered.csv"

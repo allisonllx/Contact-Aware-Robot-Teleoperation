@@ -187,6 +187,36 @@ python3 analysis.py --source raw --include-anomalies
 python3 analysis.py --force-threshold 50
 ```
 
+#### 8. Experiment runner
+
+Use the experiment runner for structured occluded peg-in-hole user-study data collection:
+
+```bash
+python3 experiment.py --tester pilot --dry-run
+mjpython experiment.py --tester tester_01
+```
+
+By default, the runner uses `peg_in_hole` with `--interactive --occluded-task --randomize-occluded-hole`, assigns or reuses a counterbalanced condition order, and runs `no_feedback`, `visual_feedback`, `audio_feedback`, and `both_feedback`. Each condition has two saved practice trials and one recorded trial. Practice data is saved but excluded from the main experiment summary.
+
+Outputs are written under `experiment_results/<tester>/` instead of `results/`:
+
+```text
+experiment_results/<tester>/experiment_plan.json
+experiment_results/<tester>/<condition>/practice_01/
+experiment_results/<tester>/<condition>/practice_02/
+experiment_results/<tester>/<condition>/recorded_01/
+experiment_results/<tester>/experiment_analysis_summary.csv
+experiment_results/<tester>/practice_analysis_summary.csv
+```
+
+Useful options:
+
+```bash
+mjpython experiment.py --tester pilot --conditions no_feedback --practice-trials 0 --recorded-trials 1
+python3 experiment.py --tester tester_01 --order no_feedback visual_feedback audio_feedback both_feedback --dry-run
+mjpython experiment.py --tester tester_01 --base-seed 123 --record-video
+```
+
 Show CLI options:
 
 ```bash
@@ -246,12 +276,15 @@ Each run writes artifacts under `results/<scenario>/`:
 
 Running `python3 analysis.py` writes `results/force_analysis_summary.csv`, a cross-scenario summary of estimation error and task/safety metrics.
 
+Running `experiment.py` writes participant-level artifacts under `experiment_results/<tester>/`, including per-trial CSVs/plots, `trial_metadata.json`, `experiment_plan.json`, and experiment-level summaries.
+
 Reference outputs are checked in under `sample_results/`.
 
 ## Project Layout
 
 ```text
 analysis.py                     Cross-scenario force estimation analysis
+experiment.py                   Occluded peg-in-hole study runner
 main.py                         CLI entrypoint
 franka_force/config.py          Paths, scenario names, video defaults
 franka_force/env.py             Shared MuJoCo environment and viewer orchestration
