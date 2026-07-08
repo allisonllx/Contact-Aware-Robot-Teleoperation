@@ -203,7 +203,7 @@ python3 experiment.py --tester pilot --dry-run
 mjpython experiment.py --tester tester_01
 ```
 
-By default, the runner uses `peg_in_hole` with `--interactive --occluded-task --randomize-occluded-hole`, assigns or reuses a counterbalanced condition order, and runs `no_feedback`, `visual_feedback`, `audio_feedback`, and `both_feedback`. Each condition has two saved practice trials and one recorded trial. Practice data is saved but excluded from the main experiment summary. Experiment trials use a frosted occluder with `--occluder-alpha 0.8`.
+By default, the runner uses `peg_in_hole` with `--interactive --occluded-task --randomize-occluded-hole`, assigns or reuses a counterbalanced condition order, and runs `no_feedback`, `visual_feedback`, `audio_feedback`, and `both_feedback`. Each condition has two saved practice trials and one recorded trial. Practice data is saved but excluded from the main experiment summary. Experiment trials use a frosted occluder with `--occluder-alpha 0.8` and a 5 mm keyboard nudge step.
 
 Each trial is launched as a fresh `main.py` subprocess so the MuJoCo viewer is not reopened repeatedly inside one long-running Python process. On macOS, the runner uses `mjpython` for trial subprocesses when it is available on PATH; otherwise it falls back to the current Python executable. Use `--trial-python mjpython` if your shell needs the launcher to be explicit.
 
@@ -227,6 +227,7 @@ mjpython experiment.py --tester pilot --conditions no_feedback --practice-trials
 python3 experiment.py --tester tester_01 --order no_feedback visual_feedback audio_feedback both_feedback --dry-run
 mjpython experiment.py --tester tester_01 --base-seed 123 --record-video
 mjpython experiment.py --tester tester_01 --occluder-alpha 0.85 --occluder-style frosted
+mjpython experiment.py --tester tester_01 --teleop-nudge-step 0.003
 mjpython experiment.py --tester tester_01 --trial-python mjpython
 ```
 
@@ -240,8 +241,8 @@ python3 main.py --help
 
 | Control | Meaning |
 | --- | --- |
-| Arrow keys | Move target in X/Y: north, south, east, west; each click nudges about 1.5 cm |
-| `9` / `8` | Raise / lower target in Z; each click nudges about 1.5 cm |
+| Arrow keys | Move target in X/Y: north, south, east, west; each click nudges 5 mm by default |
+| `9` / `8` | Raise / lower target in Z; each click nudges 5 mm by default |
 | Page Up / Page Down | Also raise / lower target in Z, if your keyboard has them |
 | `,` / `.` | Open / close gripper |
 | `6` / `7` in `peg_in_hole` | Spin the downward-facing peg about the vertical insertion axis |
@@ -257,6 +258,8 @@ Avoid `I`, `J`, `K`, and `U` in the MuJoCo viewer because they toggle debug visu
 | --- | --- | --- |
 | `--scenario` | All runs | Choose `peg_in_hole`, `push_block`, or `hit_floor`. |
 | `--interactive` | All scenarios | Enable keyboard teleoperation and live viewer control. |
+| `--teleop-nudge-step` | Interactive runs | Set the per-click keyboard nudge distance in meters. Default is `0.005`. |
+| `--teleop-speed` | Interactive runs | Set hold-to-move speed in meters per second when `pynput` is installed. Default is `0.06`. |
 | `--free-orientation` | `push_block` / `hit_floor` with `--interactive` | Add pitch, yaw, and roll controls for side-task exploration. |
 | `--disable-policy` | Non-interactive runs | Load the scenario without applying its scripted motion policy. |
 | `--force-feedback` | Interactive runs | Show live visual force feedback. |

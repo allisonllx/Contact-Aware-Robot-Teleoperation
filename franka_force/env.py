@@ -25,6 +25,8 @@ from .config import (
     DEFAULT_OCCLUDED_HOLE_Y_RANGE,
     DEFAULT_PEG_ALPHA,
     DEFAULT_SOCKET_ALPHA,
+    DEFAULT_TELEOP_NUDGE_STEP,
+    DEFAULT_TELEOP_SPEED,
     FORCE_VISUAL_MODES,
     MODEL_PATH,
     OCCLUDER_STYLES,
@@ -70,6 +72,8 @@ class FrankaForceEnv:
         socket_alpha=DEFAULT_SOCKET_ALPHA,
         occluder_alpha=DEFAULT_OCCLUDER_ALPHA,
         occluder_style=DEFAULT_OCCLUDER_STYLE,
+        teleop_speed=DEFAULT_TELEOP_SPEED,
+        teleop_nudge_step=DEFAULT_TELEOP_NUDGE_STEP,
         results_dir=None,
     ):
         if scenario not in SCENARIOS:
@@ -115,6 +119,8 @@ class FrankaForceEnv:
         self.socket_alpha = socket_alpha
         self.occluder_alpha = occluder_alpha
         self.occluder_style = occluder_style
+        self.teleop_speed = teleop_speed
+        self.teleop_nudge_step = teleop_nudge_step
 
         if force_feedback and not interactive:
             raise ValueError("force_feedback requires interactive=True")
@@ -158,6 +164,10 @@ class FrankaForceEnv:
             raise ValueError("socket_alpha must be between 0.0 and 1.0")
         if not 0.0 <= occluder_alpha <= 1.0:
             raise ValueError("occluder_alpha must be between 0.0 and 1.0")
+        if teleop_speed <= 0.0:
+            raise ValueError("teleop_speed must be positive")
+        if teleop_nudge_step <= 0.0:
+            raise ValueError("teleop_nudge_step must be positive")
 
         if self.randomize_occluded_hole:
             rng = np.random.default_rng(self.occluded_hole_seed)
@@ -242,7 +252,11 @@ class FrankaForceEnv:
                 volume=self.audio_volume,
             )
 
-        teleop.initialize_state(self)
+        teleop.initialize_state(
+            self,
+            teleop_speed=self.teleop_speed,
+            teleop_nudge_step=self.teleop_nudge_step,
+        )
         force_visuals.initialize_state(self)
         self.scenario_impl.initialize_state(self)
 

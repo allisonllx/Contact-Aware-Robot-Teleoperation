@@ -19,6 +19,8 @@ from franka_force.config import (
     DEFAULT_OCCLUDED_HOLE_Y_RANGE,
     DEFAULT_PEG_ALPHA,
     DEFAULT_SOCKET_ALPHA,
+    DEFAULT_TELEOP_NUDGE_STEP,
+    DEFAULT_TELEOP_SPEED,
     OCCLUDER_STYLES,
 )
 
@@ -177,6 +179,18 @@ def parse_args():
         default=EXPERIMENT_OCCLUDER_STYLE,
         help="Occlusion obstacle visual style.",
     )
+    parser.add_argument(
+        "--teleop-nudge-step",
+        type=float,
+        default=DEFAULT_TELEOP_NUDGE_STEP,
+        help="Keyboard nudge distance in meters for each discrete teleop key press.",
+    )
+    parser.add_argument(
+        "--teleop-speed",
+        type=float,
+        default=DEFAULT_TELEOP_SPEED,
+        help="Keyboard hold-to-move speed in meters per second when pynput is installed.",
+    )
     return parser.parse_args()
 
 
@@ -259,6 +273,10 @@ def validate_args(args):
         raise ValueError("--force-threshold must be positive")
     if not 0.0 <= args.occluder_alpha <= 1.0:
         raise ValueError("--occluder-alpha must be between 0.0 and 1.0")
+    if args.teleop_nudge_step <= 0.0:
+        raise ValueError("--teleop-nudge-step must be positive")
+    if args.teleop_speed <= 0.0:
+        raise ValueError("--teleop-speed must be positive")
 
 
 def validate_range(name, values):
@@ -592,6 +610,10 @@ def build_trial_command(args, trial):
         str(args.occluder_alpha),
         "--occluder-style",
         args.occluder_style,
+        "--teleop-nudge-step",
+        str(args.teleop_nudge_step),
+        "--teleop-speed",
+        str(args.teleop_speed),
         "--results-dir",
         str(trial["trial_dir"].resolve()),
     ]
@@ -688,6 +710,8 @@ def trial_metadata(args, plan, trial, status):
         "occluded_hole_y_range": list(args.occluded_hole_y_range),
         "occluder_alpha": args.occluder_alpha,
         "occluder_style": args.occluder_style,
+        "teleop_nudge_step": args.teleop_nudge_step,
+        "teleop_speed": args.teleop_speed,
         "record_video": args.record_video,
         "record_force_feedback": args.record_force_feedback and trial["visual_feedback"],
     }

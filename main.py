@@ -20,6 +20,8 @@ from franka_force.config import (
     DEFAULT_OCCLUDED_HOLE_Y_RANGE,
     DEFAULT_PEG_ALPHA,
     DEFAULT_SOCKET_ALPHA,
+    DEFAULT_TELEOP_NUDGE_STEP,
+    DEFAULT_TELEOP_SPEED,
     OCCLUDER_STYLES,
 )
 
@@ -212,6 +214,18 @@ def parse_args():
         default=DEFAULT_OCCLUDER_STYLE,
         help="Occlusion obstacle visual style for --occluded-task",
     )
+    parser.add_argument(
+        "--teleop-nudge-step",
+        type=float,
+        default=DEFAULT_TELEOP_NUDGE_STEP,
+        help="Keyboard nudge distance in meters for each discrete teleop key press",
+    )
+    parser.add_argument(
+        "--teleop-speed",
+        type=float,
+        default=DEFAULT_TELEOP_SPEED,
+        help="Keyboard hold-to-move speed in meters per second when pynput is installed",
+    )
     return parser.parse_args()
 
 
@@ -252,5 +266,7 @@ if __name__ == "__main__":
         socket_alpha=args.socket_alpha,
         occluder_alpha=args.occluder_alpha,
         occluder_style=args.occluder_style,
+        teleop_nudge_step=args.teleop_nudge_step,
+        teleop_speed=args.teleop_speed,
     )
     env.run()

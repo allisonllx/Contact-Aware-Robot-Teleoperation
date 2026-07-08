@@ -3,21 +3,20 @@ import threading
 import mujoco
 import numpy as np
 
+from .config import DEFAULT_TELEOP_NUDGE_STEP, DEFAULT_TELEOP_SPEED
+
 try:
     from pynput import keyboard as pynput_keyboard
 except ImportError:
     pynput_keyboard = None
 
 
-TELEOP_SPEED = 0.08
-KEY_NUDGE_STEP = 0.015
-
-
-def initialize_state(env):
+def initialize_state(env, teleop_speed=DEFAULT_TELEOP_SPEED, teleop_nudge_step=DEFAULT_TELEOP_NUDGE_STEP):
     env.target_pos = np.zeros(3)
     env.target_rot = np.eye(3)
     env.target_roll = 0.0
-    env.teleop_speed = TELEOP_SPEED
+    env.teleop_speed = teleop_speed
+    env.teleop_nudge_step = teleop_nudge_step
     env.orientation_speed = 0.8
     env.roll_speed = 0.8
     env.gripper_closed = False
@@ -165,6 +164,7 @@ def print_controls(
     print("  Arrow keys   : Up/Down = North/South, Left/Right = West/East")
     print("  9 / 8        : Raise / lower target (Z)")
     print("  Page Up/Down : Also raise / lower (Z), if your keyboard has them")
+    print(f"  Step size    : {env.teleop_nudge_step * 1000:.0f} mm per discrete key press")
     if roll_controls:
         print("  6 / 7        : Roll tool left / right (spin about vertical)")
     if free_orientation_controls:
@@ -340,9 +340,9 @@ def sync_target_marker(env):
 
 def nudge_target(env, dx=0.0, dy=0.0, dz=0.0):
     with env._teleop_lock:
-        env.target_pos[0] += dx * KEY_NUDGE_STEP
-        env.target_pos[1] += dy * KEY_NUDGE_STEP
-        env.target_pos[2] += dz * KEY_NUDGE_STEP
+        env.target_pos[0] += dx * env.teleop_nudge_step
+        env.target_pos[1] += dy * env.teleop_nudge_step
+        env.target_pos[2] += dz * env.teleop_nudge_step
 
 
 def set_gripper(env, closed):

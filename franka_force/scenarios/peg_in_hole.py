@@ -167,6 +167,7 @@ class PegInHoleScenario(Scenario):
         print("  9 / 8        : Raise / lower target (Z)")
         print("  6 / 7        : Roll peg left / right (spin about vertical)")
         print("  Page Up/Down : Also raise / lower (Z), if your keyboard has them")
+        print(f"  Step size    : {env.teleop_nudge_step * 1000:.0f} mm per discrete key press")
         print("  , / .        : Open / close gripper")
         print()
         print("DO NOT press I, J, K, or U — those are MuJoCo debug toggles")
