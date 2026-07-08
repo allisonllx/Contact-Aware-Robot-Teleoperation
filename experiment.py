@@ -6,6 +6,7 @@ import re
 import secrets
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 from datetime import datetime
@@ -28,6 +29,9 @@ SCENARIO = "peg_in_hole"
 CONDITIONS = ("no_feedback", "visual_feedback", "audio_feedback", "both_feedback")
 EXPERIMENT_OCCLUDER_ALPHA = 0.8
 EXPERIMENT_OCCLUDER_STYLE = "frosted"
+TRIAL_METADATA_NAME = "trial_metadata.json"
+RAW_LOG_NAME = "force_verification_log.csv"
+FILTERED_LOG_NAME = "force_verification_log_filtered.csv"
 WILLIAMS_ORDERS = (
     ("no_feedback", "visual_feedback", "both_feedback", "audio_feedback"),
     ("visual_feedback", "audio_feedback", "no_feedback", "both_feedback"),
@@ -206,21 +210,31 @@ def main():
         print("\nDry run only; no MuJoCo windows launched.")
         return
 
-    for trial in trial_specs:
-        if trial_completed(trial["trial_dir"]) and not args.rerun_existing:
-            print(f"\nSkipping completed trial: {trial['trial_dir']}")
-            continue
-        wait_for_trial(trial)
-        run_trial(args, plan, trial)
+    interrupted = False
+    try:
+        for trial in trial_specs:
+            state = trial_state(trial["trial_dir"])
+            if state["complete"] and not args.rerun_existing:
+                print(f"\nSkipping completed trial: {trial['trial_dir']}")
+                continue
+            print_resume_note(trial, state, args.rerun_existing)
+            wait_for_trial(trial)
+            run_trial(args, plan, trial)
+    except KeyboardInterrupt:
+        interrupted = True
+        print("\nExperiment interrupted. Rerun the same tester command to resume at the first incomplete trial.")
+    finally:
+        write_experiment_summaries(
+            tester_dir=tester_dir,
+            tester_name=tester_name,
+            tester_id=tester_id,
+            plan=plan,
+            trial_specs=trial_specs,
+            force_threshold=args.force_threshold,
+        )
 
-    write_experiment_summaries(
-        tester_dir=tester_dir,
-        tester_name=tester_name,
-        tester_id=tester_id,
-        plan=plan,
-        trial_specs=trial_specs,
-        force_threshold=args.force_threshold,
-    )
+    if interrupted:
+        raise SystemExit(130)
 
 
 def validate_args(args):
@@ -405,12 +419,15 @@ def print_experiment_overview(tester_name, tester_dir, plan, trial_specs, dry_ru
     print(f"Condition order: {' -> '.join(plan['condition_order'])}")
     if plan.get("loaded_existing_plan"):
         print("Using existing experiment_plan.json.")
+    print_progress_summary(trial_specs)
     print()
     for trial in trial_specs:
         flags = condition_flags_for_display(trial)
+        state = trial_state(trial["trial_dir"])
         print(
             f"{trial['condition_position']}. {trial['condition']} / "
-            f"{trial['trial_name']} / seed={trial['seed']} / {flags}"
+            f"{trial['trial_name']} / seed={trial['seed']} / {flags} / "
+            f"{trial_status_for_display(state)}"
         )
         print(f"   {trial['trial_dir']}")
         if dry_run:
@@ -426,8 +443,70 @@ def condition_flags_for_display(trial):
     return "+".join(flags) if flags else "no feedback"
 
 
+def print_progress_summary(trial_specs):
+    states = [trial_state(trial["trial_dir"]) for trial in trial_specs]
+    completed = sum(1 for state in states if state["complete"])
+    interrupted = sum(1 for state in states if state["status"] == "interrupted")
+    failed = sum(1 for state in states if state["status"] == "failed")
+    started = sum(1 for state in states if state["status"] == "started")
+    total = len(states)
+    print(f"Progress: {completed}/{total} completed.")
+    if interrupted or failed or started:
+        details = []
+        if interrupted:
+            details.append(f"{interrupted} interrupted")
+        if failed:
+            details.append(f"{failed} failed")
+        if started:
+            details.append(f"{started} started/incomplete")
+        print("Resume state: " + ", ".join(details) + ".")
+
+
+def print_resume_note(trial, state, rerun_existing):
+    if state["complete"] and rerun_existing:
+        print(f"\nRerunning completed trial because --rerun-existing is set: {trial['trial_dir']}")
+    elif state["status"] != "not_started" or state["has_telemetry"]:
+        print(
+            f"\nResuming at incomplete trial: {trial['trial_dir']} "
+            f"({trial_status_for_display(state)})."
+        )
+        print("Existing partial outputs in this trial folder will be overwritten by the rerun.")
+
+
 def trial_completed(trial_dir):
-    return (trial_dir / "force_verification_log.csv").exists()
+    return trial_state(trial_dir)["complete"]
+
+
+def trial_state(trial_dir):
+    trial_dir = Path(trial_dir)
+    metadata = read_json_if_exists(trial_dir / TRIAL_METADATA_NAME)
+    status = metadata.get("status") if isinstance(metadata, dict) else None
+    has_raw_csv = (trial_dir / RAW_LOG_NAME).exists()
+    has_filtered_csv = (trial_dir / FILTERED_LOG_NAME).exists()
+    has_telemetry = has_raw_csv or has_filtered_csv
+    if not status:
+        status = "not_started"
+    return {
+        "status": status,
+        "has_metadata": metadata is not None,
+        "has_raw_csv": has_raw_csv,
+        "has_filtered_csv": has_filtered_csv,
+        "has_telemetry": has_telemetry,
+        "complete": status == "completed" and has_telemetry,
+    }
+
+
+def trial_status_for_display(state):
+    if state["complete"]:
+        return "status=completed"
+    status = state["status"]
+    if status == "not_started" and state["has_telemetry"]:
+        return "status=partial/no metadata"
+    if status == "completed":
+        return "status=completed/missing telemetry"
+    if state["has_telemetry"]:
+        return f"status={status}/partial telemetry"
+    return f"status={status}"
 
 
 def wait_for_trial(trial):
@@ -450,10 +529,23 @@ def run_trial(args, plan, trial):
     try:
         subprocess.run(metadata["command"], cwd=REPO_ROOT, check=True)
     except subprocess.CalledProcessError as exc:
-        metadata["status"] = "failed"
+        interrupted = is_interrupt_returncode(exc.returncode)
+        metadata["status"] = "interrupted" if interrupted else "failed"
         metadata["ended_at"] = utc_now()
         metadata["returncode"] = exc.returncode
-        metadata["error"] = f"Trial process exited with status {exc.returncode}"
+        metadata["error"] = (
+            "Trial interrupted"
+            if interrupted
+            else f"Trial process exited with status {exc.returncode}"
+        )
+        write_json(metadata_path, metadata)
+        if interrupted:
+            raise KeyboardInterrupt
+        raise
+    except KeyboardInterrupt:
+        metadata["status"] = "interrupted"
+        metadata["ended_at"] = utc_now()
+        metadata["error"] = "Trial interrupted"
         write_json(metadata_path, metadata)
         raise
     except OSError as exc:
@@ -467,6 +559,10 @@ def run_trial(args, plan, trial):
     metadata["ended_at"] = utc_now()
     metadata.update(read_trial_outcome(trial_dir))
     write_json(metadata_path, metadata)
+
+
+def is_interrupt_returncode(returncode):
+    return returncode in (-signal.SIGINT, 128 + signal.SIGINT)
 
 
 def build_trial_command(args, trial):
@@ -519,9 +615,9 @@ def trial_python(args):
 
 
 def read_trial_outcome(trial_dir):
-    log_path = trial_dir / "force_verification_log_filtered.csv"
+    log_path = trial_dir / FILTERED_LOG_NAME
     if not log_path.exists():
-        log_path = trial_dir / "force_verification_log.csv"
+        log_path = trial_dir / RAW_LOG_NAME
     if not log_path.exists():
         return {}
 
@@ -660,6 +756,16 @@ def write_json(path, data):
     with path.open("w") as f:
         json.dump(serializable, f, indent=2, sort_keys=True)
         f.write("\n")
+
+
+def read_json_if_exists(path):
+    if not path.exists():
+        return None
+    try:
+        with path.open() as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {"status": "metadata_unreadable"}
 
 
 def utc_now():

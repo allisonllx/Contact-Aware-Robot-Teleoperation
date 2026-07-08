@@ -207,6 +207,8 @@ By default, the runner uses `peg_in_hole` with `--interactive --occluded-task --
 
 Each trial is launched as a fresh `main.py` subprocess so the MuJoCo viewer is not reopened repeatedly inside one long-running Python process. On macOS, the runner uses `mjpython` for trial subprocesses when it is available on PATH; otherwise it falls back to the current Python executable. Use `--trial-python mjpython` if your shell needs the launcher to be explicit.
 
+The runner can resume an interrupted tester session. It reuses `experiment_plan.json`, prints progress for that tester, and skips only trials whose `trial_metadata.json` has `status=completed` and telemetry exists. If a trial was interrupted, failed, or left with partial telemetry, rerunning the same tester command starts again from that incomplete trial. Use `--rerun-existing` only when you intentionally want to redo completed trials.
+
 Outputs are written under `experiment_results/<tester>/` instead of `results/`:
 
 ```text
