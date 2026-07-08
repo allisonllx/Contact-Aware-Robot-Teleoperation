@@ -4,20 +4,28 @@ import hashlib
 import json
 import re
 import secrets
+import shlex
+import shutil
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
 from analysis import SUMMARY_COLUMNS, analyze_result_dir, csv_value
 from franka_force.config import (
     DEFAULT_HOLE_CLEARANCE_MM,
+    DEFAULT_OCCLUDER_ALPHA,
+    DEFAULT_OCCLUDER_STYLE,
     DEFAULT_OCCLUDED_HOLE_X_RANGE,
     DEFAULT_OCCLUDED_HOLE_Y_RANGE,
     DEFAULT_PEG_ALPHA,
     DEFAULT_SOCKET_ALPHA,
+    OCCLUDER_STYLES,
 )
 
 
 EXPERIMENT_ROOT = Path("experiment_results")
+REPO_ROOT = Path(__file__).resolve().parent
 SCENARIO = "peg_in_hole"
 CONDITIONS = ("no_feedback", "visual_feedback", "audio_feedback", "both_feedback")
 WILLIAMS_ORDERS = (
@@ -91,6 +99,14 @@ def parse_args():
         help="Create/reuse the tester plan and print trial commands without launching MuJoCo.",
     )
     parser.add_argument(
+        "--trial-python",
+        default=None,
+        help=(
+            "Python launcher for each MuJoCo trial. Defaults to mjpython on macOS "
+            "when available, otherwise the current Python executable."
+        ),
+    )
+    parser.add_argument(
         "--record-video",
         action="store_true",
         help="Record MP4 video for each trial.",
@@ -145,6 +161,18 @@ def parse_args():
         default=DEFAULT_SOCKET_ALPHA,
         help="Socket wall opacity.",
     )
+    parser.add_argument(
+        "--occluder-alpha",
+        type=float,
+        default=DEFAULT_OCCLUDER_ALPHA,
+        help="Occlusion obstacle opacity, from 0.0 transparent to 1.0 opaque.",
+    )
+    parser.add_argument(
+        "--occluder-style",
+        choices=OCCLUDER_STYLES,
+        default=DEFAULT_OCCLUDER_STYLE,
+        help="Occlusion obstacle visual style.",
+    )
     return parser.parse_args()
 
 
@@ -172,7 +200,7 @@ def main():
     ensure_selected_conditions_in_plan(selected_conditions, plan)
 
     trial_specs = build_trial_specs(args, tester_name, tester_id, tester_dir, plan, selected_conditions)
-    print_experiment_overview(tester_name, tester_dir, plan, trial_specs, args.dry_run)
+    print_experiment_overview(tester_name, tester_dir, plan, trial_specs, args.dry_run, args)
 
     if args.dry_run:
         print("\nDry run only; no MuJoCo windows launched.")
@@ -215,6 +243,8 @@ def validate_args(args):
     validate_range("--occluded-hole-y-range", args.occluded_hole_y_range)
     if args.force_threshold <= 0.0:
         raise ValueError("--force-threshold must be positive")
+    if not 0.0 <= args.occluder_alpha <= 1.0:
+        raise ValueError("--occluder-alpha must be between 0.0 and 1.0")
 
 
 def validate_range(name, values):
@@ -367,7 +397,7 @@ def trial_seed(seed_base, tester_id, condition, trial_type, trial_index):
     return stable_int(seed_key) % (2 ** 32)
 
 
-def print_experiment_overview(tester_name, tester_dir, plan, trial_specs, dry_run):
+def print_experiment_overview(tester_name, tester_dir, plan, trial_specs, dry_run, args):
     mode = "DRY RUN" if dry_run else "LIVE RUN"
     print(f"\n=== {mode}: OCCLUDED PEG-IN-HOLE EXPERIMENT ===")
     print(f"Tester: {tester_name}")
@@ -383,6 +413,8 @@ def print_experiment_overview(tester_name, tester_dir, plan, trial_specs, dry_ru
             f"{trial['trial_name']} / seed={trial['seed']} / {flags}"
         )
         print(f"   {trial['trial_dir']}")
+        if dry_run:
+            print(f"   {shlex.join(build_trial_command(args, trial))}")
 
 
 def condition_flags_for_display(trial):
@@ -408,36 +440,23 @@ def wait_for_trial(trial):
 
 
 def run_trial(args, plan, trial):
-    from franka_force import FrankaForceEnv
-
     trial_dir = trial["trial_dir"]
     trial_dir.mkdir(parents=True, exist_ok=True)
     metadata_path = trial_dir / "trial_metadata.json"
     metadata = trial_metadata(args, plan, trial, status="started")
+    metadata["command"] = build_trial_command(args, trial)
     write_json(metadata_path, metadata)
 
     try:
-        env = FrankaForceEnv(
-            scenario=SCENARIO,
-            interactive=True,
-            occluded_task=True,
-            randomize_occluded_hole=True,
-            occluded_hole_seed=trial["seed"],
-            occluded_hole_x_range=args.occluded_hole_x_range,
-            occluded_hole_y_range=args.occluded_hole_y_range,
-            hole_clearance_mm=args.hole_clearance_mm,
-            force_feedback=trial["visual_feedback"],
-            force_visual="both",
-            audio_feedback=trial["audio_feedback"],
-            audio_mode="both",
-            record_video=args.record_video,
-            record_force_feedback=args.record_force_feedback and trial["visual_feedback"],
-            peg_alpha=args.peg_alpha,
-            socket_alpha=args.socket_alpha,
-            results_dir=trial_dir,
-        )
-        env.run()
-    except Exception as exc:
+        subprocess.run(metadata["command"], cwd=REPO_ROOT, check=True)
+    except subprocess.CalledProcessError as exc:
+        metadata["status"] = "failed"
+        metadata["ended_at"] = utc_now()
+        metadata["returncode"] = exc.returncode
+        metadata["error"] = f"Trial process exited with status {exc.returncode}"
+        write_json(metadata_path, metadata)
+        raise
+    except OSError as exc:
         metadata["status"] = "failed"
         metadata["ended_at"] = utc_now()
         metadata["error"] = repr(exc)
@@ -446,11 +465,111 @@ def run_trial(args, plan, trial):
 
     metadata["status"] = "completed"
     metadata["ended_at"] = utc_now()
-    metadata["task_success"] = bool(getattr(env, "task_success", False))
-    metadata["success_hold_time"] = float(getattr(env, "success_hold_time", 0.0))
-    metadata["occluded_hole_world_pos"] = list(map(float, env.occluded_hole_world_pos[:2]))
-    metadata["occluded_hole_offset"] = list(map(float, env.occluded_hole_offset[:2]))
+    metadata.update(read_trial_outcome(trial_dir))
     write_json(metadata_path, metadata)
+
+
+def build_trial_command(args, trial):
+    command = [
+        trial_python(args),
+        str(REPO_ROOT / "main.py"),
+        "--scenario",
+        SCENARIO,
+        "--interactive",
+        "--occluded-task",
+        "--randomize-occluded-hole",
+        "--occluded-hole-seed",
+        str(trial["seed"]),
+        "--occluded-hole-x-range",
+        str(args.occluded_hole_x_range[0]),
+        str(args.occluded_hole_x_range[1]),
+        "--occluded-hole-y-range",
+        str(args.occluded_hole_y_range[0]),
+        str(args.occluded_hole_y_range[1]),
+        "--hole-clearance-mm",
+        str(args.hole_clearance_mm),
+        "--peg-alpha",
+        str(args.peg_alpha),
+        "--socket-alpha",
+        str(args.socket_alpha),
+        "--occluder-alpha",
+        str(args.occluder_alpha),
+        "--occluder-style",
+        args.occluder_style,
+        "--results-dir",
+        str(trial["trial_dir"].resolve()),
+    ]
+    if trial["visual_feedback"]:
+        command.extend(["--force-feedback", "--force-visual", "both"])
+    if trial["audio_feedback"]:
+        command.extend(["--audio-feedback", "--audio-mode", "both"])
+    if args.record_video:
+        command.append("--record-video")
+    if args.record_force_feedback and trial["visual_feedback"]:
+        command.append("--record-force-feedback")
+    return command
+
+
+def trial_python(args):
+    if args.trial_python:
+        return args.trial_python
+    if sys.platform == "darwin":
+        return shutil.which("mjpython") or sys.executable
+    return sys.executable
+
+
+def read_trial_outcome(trial_dir):
+    log_path = trial_dir / "force_verification_log_filtered.csv"
+    if not log_path.exists():
+        log_path = trial_dir / "force_verification_log.csv"
+    if not log_path.exists():
+        return {}
+
+    with log_path.open(newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        return {}
+
+    return {
+        "task_success": any_csv_bool(rows, "Task Success"),
+        "success_hold_time": max_csv_float(rows, "Success Hold Time", default=0.0),
+        "occluded_hole_world_pos": [
+            first_csv_float(rows, "Occluded Hole X (m)"),
+            first_csv_float(rows, "Occluded Hole Y (m)"),
+        ],
+        "occluded_hole_offset": [
+            first_csv_float(rows, "Occluded Hole Offset X (m)"),
+            first_csv_float(rows, "Occluded Hole Offset Y (m)"),
+        ],
+    }
+
+
+def any_csv_bool(rows, column):
+    return any(str(row.get(column, "")).strip().lower() in {"1", "1.0", "true", "yes"} for row in rows)
+
+
+def max_csv_float(rows, column, default=None):
+    values = [
+        value
+        for value in (parse_float(row.get(column, "")) for row in rows)
+        if value is not None
+    ]
+    return max(values) if values else default
+
+
+def first_csv_float(rows, column):
+    for row in rows:
+        value = parse_float(row.get(column, ""))
+        if value is not None:
+            return value
+    return None
+
+
+def parse_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def trial_metadata(args, plan, trial, status):
@@ -471,6 +590,8 @@ def trial_metadata(args, plan, trial, status):
         "hole_clearance_mm": args.hole_clearance_mm,
         "occluded_hole_x_range": list(args.occluded_hole_x_range),
         "occluded_hole_y_range": list(args.occluded_hole_y_range),
+        "occluder_alpha": args.occluder_alpha,
+        "occluder_style": args.occluder_style,
         "record_video": args.record_video,
         "record_force_feedback": args.record_force_feedback and trial["visual_feedback"],
     }

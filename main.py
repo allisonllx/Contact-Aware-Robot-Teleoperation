@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 from franka_force import AUDIO_MODES, FORCE_VISUAL_MODES, SCENARIOS
 from franka_force.config import (
@@ -13,10 +14,13 @@ from franka_force.config import (
     DEFAULT_IMPEDANCE_KP,
     DEFAULT_IMPEDANCE_KR,
     DEFAULT_IMPEDANCE_TORQUE_LIMIT,
+    DEFAULT_OCCLUDER_ALPHA,
+    DEFAULT_OCCLUDER_STYLE,
     DEFAULT_OCCLUDED_HOLE_X_RANGE,
     DEFAULT_OCCLUDED_HOLE_Y_RANGE,
     DEFAULT_PEG_ALPHA,
     DEFAULT_SOCKET_ALPHA,
+    OCCLUDER_STYLES,
 )
 
 
@@ -55,6 +59,12 @@ def parse_args():
         help="Include force feedback overlay geoms in --record-video output",
     )
     parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=None,
+        help="Override the output folder for CSVs, plots, and optional video.",
+    )
+    parser.add_argument(
         "--disable-policy",
         action="store_true",
         help="Disable scripted scenario motion in non-interactive runs",
@@ -72,7 +82,7 @@ def parse_args():
     parser.add_argument(
         "--randomize-occluded-hole",
         action="store_true",
-        help="Randomize the hidden socket position for --occluded-task while keeping the opaque blocker fixed",
+        help="Randomize the hidden socket position for --occluded-task while keeping the obstacle fixed",
     )
     parser.add_argument(
         "--occluded-hole-x-range",
@@ -190,6 +200,18 @@ def parse_args():
         default=DEFAULT_SOCKET_ALPHA,
         help="Socket wall opacity for peg_in_hole, from 0.0 transparent to 1.0 opaque",
     )
+    parser.add_argument(
+        "--occluder-alpha",
+        type=float,
+        default=DEFAULT_OCCLUDER_ALPHA,
+        help="Occlusion obstacle opacity for --occluded-task, from 0.0 transparent to 1.0 opaque",
+    )
+    parser.add_argument(
+        "--occluder-style",
+        choices=OCCLUDER_STYLES,
+        default=DEFAULT_OCCLUDER_STYLE,
+        help="Occlusion obstacle visual style for --occluded-task",
+    )
     return parser.parse_args()
 
 
@@ -204,6 +226,7 @@ if __name__ == "__main__":
         force_visual=args.force_visual,
         record_video=args.record_video,
         record_force_feedback=args.record_force_feedback,
+        results_dir=args.results_dir,
         disable_policy=args.disable_policy,
         free_orientation=args.free_orientation,
         occluded_task=args.occluded_task,
@@ -227,5 +250,7 @@ if __name__ == "__main__":
         impedance_torque_limit=args.impedance_torque_limit,
         peg_alpha=args.peg_alpha,
         socket_alpha=args.socket_alpha,
+        occluder_alpha=args.occluder_alpha,
+        occluder_style=args.occluder_style,
     )
     env.run()

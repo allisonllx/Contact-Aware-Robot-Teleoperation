@@ -138,14 +138,21 @@ Run the occluded peg-in-hole experiment:
 mjpython main.py --scenario peg_in_hole --interactive --occluded-task --force-feedback --force-visual both --peg-alpha 0.45 --socket-alpha 0.45
 ```
 
-Randomize the hidden socket location while keeping the opaque blocker fixed:
+Randomize the hidden socket location while keeping the obstacle fixed:
 
 ```bash
 mjpython main.py --scenario peg_in_hole --interactive --occluded-task --randomize-occluded-hole --force-feedback --force-visual both
 mjpython main.py --scenario peg_in_hole --interactive --occluded-task --randomize-occluded-hole --occluded-hole-seed 7
 ```
 
-`--occluded-task` adds an opaque visual-only wall in front of a slightly deeper, off-center socket, plus a hidden collision pad at the bottom of the hole. The wall blocks the user's line of sight without affecting physics, and the selected arrow/ring feedback is projected to a visible proxy position just in front of and above the wall. With `--randomize-occluded-hole`, the hidden socket and success pad shift together inside the configured X/Y range, while the opaque wall stays fixed. After sustained peg-pad contact, the run prints a success message, updates the HUD, records a final frame when video recording is enabled, and exits cleanly.
+Try a translucent or frosted obstacle:
+
+```bash
+mjpython main.py --scenario peg_in_hole --interactive --occluded-task --occluder-alpha 0.85
+mjpython main.py --scenario peg_in_hole --interactive --occluded-task --occluder-alpha 0.85 --occluder-style frosted
+```
+
+`--occluded-task` adds a visual-only wall in front of a slightly deeper, off-center socket, plus a hidden collision pad at the bottom of the hole. The wall blocks the user's line of sight without affecting physics, and the selected arrow/ring feedback is projected to a visible proxy position just in front of and above the wall. With `--randomize-occluded-hole`, the hidden socket and success pad shift together inside the configured X/Y range, while the wall stays fixed. `--occluder-alpha` is opacity, so `0.85` means 85% opaque. `--occluder-style frosted` uses a light translucent material as a frosted-glass approximation; MuJoCo does not blur objects behind it. After sustained peg-pad contact, the run prints a success message, updates the HUD, records a final frame when video recording is enabled, and exits cleanly.
 
 Enable the experimental impedance cushion during interactive peg insertion:
 
@@ -198,6 +205,8 @@ mjpython experiment.py --tester tester_01
 
 By default, the runner uses `peg_in_hole` with `--interactive --occluded-task --randomize-occluded-hole`, assigns or reuses a counterbalanced condition order, and runs `no_feedback`, `visual_feedback`, `audio_feedback`, and `both_feedback`. Each condition has two saved practice trials and one recorded trial. Practice data is saved but excluded from the main experiment summary.
 
+Each trial is launched as a fresh `main.py` subprocess so the MuJoCo viewer is not reopened repeatedly inside one long-running Python process. On macOS, the runner uses `mjpython` for trial subprocesses when it is available on PATH; otherwise it falls back to the current Python executable. Use `--trial-python mjpython` if your shell needs the launcher to be explicit.
+
 Outputs are written under `experiment_results/<tester>/` instead of `results/`:
 
 ```text
@@ -215,6 +224,8 @@ Useful options:
 mjpython experiment.py --tester pilot --conditions no_feedback --practice-trials 0 --recorded-trials 1
 python3 experiment.py --tester tester_01 --order no_feedback visual_feedback audio_feedback both_feedback --dry-run
 mjpython experiment.py --tester tester_01 --base-seed 123 --record-video
+mjpython experiment.py --tester tester_01 --occluder-alpha 0.85 --occluder-style frosted
+mjpython experiment.py --tester tester_01 --trial-python mjpython
 ```
 
 Show CLI options:
@@ -254,10 +265,12 @@ Avoid `I`, `J`, `K`, and `U` in the MuJoCo viewer because they toggle debug visu
 | `--audio-lateral-threshold`, `--audio-lateral-max`, `--audio-volume` | Audio feedback | Tune Geiger ticking thresholds and cue volume. |
 | `--record-video` | All scenarios | Save `run_recording.mp4` under `results/<scenario>/`. |
 | `--record-force-feedback` | Video recording | Include force-feedback overlay geoms in the MP4. |
+| `--results-dir` | All runs | Override where CSVs, plots, and optional video are saved. Used by `experiment.py` trial subprocesses. |
 | `--hole-clearance-mm` | `peg_in_hole` | Set total peg/hole clearance in millimeters. |
 | `--peg-alpha`, `--socket-alpha` | `peg_in_hole` | Adjust peg and socket opacity for inspection. |
 | `--occluded-task` | `peg_in_hole` with `--interactive` | Hide the socket behind a visual wall for occlusion experiments. |
-| `--randomize-occluded-hole` | `peg_in_hole` with `--occluded-task` | Randomize the hidden socket and success-pad position while keeping the blocker fixed. |
+| `--occluder-alpha`, `--occluder-style` | `peg_in_hole` with `--occluded-task` | Tune the obstacle opacity or use the frosted-glass approximation. |
+| `--randomize-occluded-hole` | `peg_in_hole` with `--occluded-task` | Randomize the hidden socket and success-pad position while keeping the obstacle fixed. |
 | `--occluded-hole-x-range`, `--occluded-hole-y-range`, `--occluded-hole-seed` | Randomized occluded task | Tune the random hidden-socket offset range or make a trial reproducible. |
 | `--contact-cushion` | `peg_in_hole` with `--interactive` | Enable the experimental reactive impedance cushion. |
 | `--cushion-threshold`, `--impedance-*` | Contact cushion | Tune when the cushion activates and how stiff/damped it feels. |
@@ -297,7 +310,7 @@ franka_force/scenarios/         Scenario-specific model, control, and contact lo
 
 `FrankaForceEnv` delegates scenario-specific behavior through the scenario registry in `franka_force/scenarios/__init__.py`, so adding a new scenario should usually mean adding one scenario module and registering it there.
 
-The CSV files also include cushion state, cushion scale, impedance torque norm, strongest contact-force vector components, occluded-task success state, hole clearance, randomized hidden-hole placement, and audio feedback state when enabled.
+The CSV files also include cushion state, cushion scale, impedance torque norm, strongest contact-force vector components, occluded-task success state, hole clearance, randomized hidden-hole placement, occluder visual settings, and audio feedback state when enabled.
 
 ## Control Experiments
 

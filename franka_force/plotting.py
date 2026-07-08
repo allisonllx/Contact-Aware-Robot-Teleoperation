@@ -32,6 +32,8 @@ def plot_force_comparison(env):
     occluded_hole_y = _history_array(env, "occluded_hole_y_history", len(t), dtype=float)
     occluded_hole_offset_x = _history_array(env, "occluded_hole_offset_x_history", len(t), dtype=float)
     occluded_hole_offset_y = _history_array(env, "occluded_hole_offset_y_history", len(t), dtype=float)
+    occluder_alpha = _history_array(env, "occluder_alpha_history", len(t), dtype=float)
+    occluder_style = _history_values(env, "occluder_style_history", len(t), default="")
     audio_feedback = _history_array(env, "audio_feedback_history", len(t), dtype=bool)
     audio_contact_event = _history_array(env, "audio_contact_event_history", len(t), dtype=bool)
     audio_tick_rate = _history_array(env, "audio_tick_rate_history", len(t), dtype=float)
@@ -57,6 +59,8 @@ def plot_force_comparison(env):
         occluded_hole_y,
         occluded_hole_offset_x,
         occluded_hole_offset_y,
+        occluder_alpha,
+        occluder_style,
         audio_feedback,
         audio_contact_event,
         audio_tick_rate,
@@ -128,6 +132,13 @@ def _contact_vector_history(env, expected_len):
     return np.array(values, dtype=float)
 
 
+def _history_values(env, name, expected_len, default=""):
+    values = getattr(env, name, [])
+    if len(values) != expected_len:
+        return [default] * expected_len
+    return values
+
+
 def _write_filtered_csv(
     path,
     times,
@@ -148,6 +159,8 @@ def _write_filtered_csv(
     occluded_hole_y,
     occluded_hole_offset_x,
     occluded_hole_offset_y,
+    occluder_alpha,
+    occluder_style,
     audio_feedback,
     audio_contact_event,
     audio_tick_rate,
@@ -175,6 +188,8 @@ def _write_filtered_csv(
             "Occluded Hole Y (m)",
             "Occluded Hole Offset X (m)",
             "Occluded Hole Offset Y (m)",
+            "Occluder Alpha",
+            "Occluder Style",
             "Audio Feedback",
             "Audio Contact Event",
             "Audio Tick Rate (Hz)",
@@ -201,6 +216,8 @@ def _write_filtered_csv(
                 occluded_hole_y[i],
                 occluded_hole_offset_x[i],
                 occluded_hole_offset_y[i],
+                occluder_alpha[i],
+                occluder_style[i],
                 int(audio_feedback[i]),
                 int(audio_contact_event[i]),
                 audio_tick_rate[i],

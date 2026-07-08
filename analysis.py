@@ -33,6 +33,8 @@ SUMMARY_COLUMNS = [
     "occluded_hole_y_m",
     "occluded_hole_offset_x_m",
     "occluded_hole_offset_y_m",
+    "occluder_alpha",
+    "occluder_style",
     "audio_feedback_enabled",
     "cushion_used",
     "mean_ground_truth_contact_n",
@@ -202,6 +204,8 @@ def analyze_log_file(log_path, scenario, force_threshold, include_anomalies):
     occluded_hole_y = optional_float_column(rows, columns, "Occluded Hole Y (m)", math.nan)
     occluded_hole_offset_x = optional_float_column(rows, columns, "Occluded Hole Offset X (m)", math.nan)
     occluded_hole_offset_y = optional_float_column(rows, columns, "Occluded Hole Offset Y (m)", math.nan)
+    occluder_alpha = optional_float_column(rows, columns, "Occluder Alpha", math.nan)
+    occluder_style = optional_text_column(rows, columns, "Occluder Style")
 
     summary.update({
         "samples_total": len(rows),
@@ -220,6 +224,8 @@ def analyze_log_file(log_path, scenario, force_threshold, include_anomalies):
         "occluded_hole_y_m": finite_median(occluded_hole_y),
         "occluded_hole_offset_x_m": finite_median(occluded_hole_offset_x),
         "occluded_hole_offset_y_m": finite_median(occluded_hole_offset_y),
+        "occluder_alpha": finite_median(occluder_alpha),
+        "occluder_style": first_nonempty(occluder_style),
         "audio_feedback_enabled": int(any(audio_feedback)),
         "cushion_used": int(any(cushion_active)),
         "mean_ground_truth_contact_n": mean_or_blank(select(f_true, contact_clean)),
@@ -284,6 +290,12 @@ def optional_bool_column(rows, columns, name):
     if name not in columns:
         return [False] * len(rows)
     return bool_column(rows, name)
+
+
+def optional_text_column(rows, columns, name):
+    if name not in columns:
+        return [""] * len(rows)
+    return [row.get(name, "") for row in rows]
 
 
 def float_column(rows, name, default=0.0):
@@ -427,6 +439,13 @@ def finite_median(values):
     if not finite_values:
         return ""
     return median(finite_values)
+
+
+def first_nonempty(values):
+    for value in values:
+        if value:
+            return value
+    return ""
 
 
 def mean(values):

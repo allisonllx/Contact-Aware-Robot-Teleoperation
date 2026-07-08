@@ -98,7 +98,7 @@ class PegInHoleScenario(Scenario):
                 occluder_height / 2.0,
             ],
             pos=list(self._occluder_world_pos()),
-            rgba=[0.08, 0.08, 0.08, 1.0],
+            rgba=self._occluder_rgba(env),
             contype=0,
             conaffinity=0,
         )
@@ -195,7 +195,8 @@ class PegInHoleScenario(Scenario):
             print("Experimental impedance cushion: OFF")
         if env.occluded_task:
             print("Occluded task: ON")
-            print("  Wider opaque front wall hides an off-center socket and hidden success pad.")
+            print("  Wider front wall hides an off-center socket and hidden success pad.")
+            print(f"  Obstacle style: {env.occluder_style}, opacity {env.occluder_alpha:.2f}.")
             if env.randomize_occluded_hole:
                 print(
                     "  Hidden socket randomization: ON "
@@ -277,6 +278,11 @@ class PegInHoleScenario(Scenario):
             self._occluder_local_y(),
             self._occluder_height() / 2.0,
         ])
+
+    def _occluder_rgba(self, env):
+        if env.occluder_style == "frosted":
+            return [0.72, 0.82, 0.86, env.occluder_alpha]
+        return [0.08, 0.08, 0.08, env.occluder_alpha]
 
     def _hole_gap(self, env):
         return self._hole_gap_from_clearance(env.hole_clearance_mm)
