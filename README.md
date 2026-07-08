@@ -203,7 +203,7 @@ python3 experiment.py --tester pilot --dry-run
 mjpython experiment.py --tester tester_01
 ```
 
-By default, the runner uses `peg_in_hole` with `--interactive --occluded-task --randomize-occluded-hole`, assigns or reuses a counterbalanced condition order, and runs `no_feedback`, `visual_feedback`, `audio_feedback`, and `both_feedback`. Each condition has two saved practice trials and one recorded trial. Practice data is saved but excluded from the main experiment summary.
+By default, the runner uses `peg_in_hole` with `--interactive --occluded-task --randomize-occluded-hole`, assigns or reuses a counterbalanced condition order, and runs `no_feedback`, `visual_feedback`, `audio_feedback`, and `both_feedback`. Each condition has two saved practice trials and one recorded trial. Practice data is saved but excluded from the main experiment summary. Experiment trials use a frosted occluder with `--occluder-alpha 0.8`.
 
 Each trial is launched as a fresh `main.py` subprocess so the MuJoCo viewer is not reopened repeatedly inside one long-running Python process. On macOS, the runner uses `mjpython` for trial subprocesses when it is available on PATH; otherwise it falls back to the current Python executable. Use `--trial-python mjpython` if your shell needs the launcher to be explicit.
 
@@ -238,8 +238,8 @@ python3 main.py --help
 
 | Control | Meaning |
 | --- | --- |
-| Arrow keys | Move target in X/Y: north, south, east, west |
-| `9` / `8` | Raise / lower target in Z |
+| Arrow keys | Move target in X/Y: north, south, east, west; each click nudges about 1.5 cm |
+| `9` / `8` | Raise / lower target in Z; each click nudges about 1.5 cm |
 | Page Up / Page Down | Also raise / lower target in Z, if your keyboard has them |
 | `,` / `.` | Open / close gripper |
 | `6` / `7` in `peg_in_hole` | Spin the downward-facing peg about the vertical insertion axis |

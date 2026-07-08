@@ -14,8 +14,6 @@ from pathlib import Path
 from analysis import SUMMARY_COLUMNS, analyze_result_dir, csv_value
 from franka_force.config import (
     DEFAULT_HOLE_CLEARANCE_MM,
-    DEFAULT_OCCLUDER_ALPHA,
-    DEFAULT_OCCLUDER_STYLE,
     DEFAULT_OCCLUDED_HOLE_X_RANGE,
     DEFAULT_OCCLUDED_HOLE_Y_RANGE,
     DEFAULT_PEG_ALPHA,
@@ -28,6 +26,8 @@ EXPERIMENT_ROOT = Path("experiment_results")
 REPO_ROOT = Path(__file__).resolve().parent
 SCENARIO = "peg_in_hole"
 CONDITIONS = ("no_feedback", "visual_feedback", "audio_feedback", "both_feedback")
+EXPERIMENT_OCCLUDER_ALPHA = 0.8
+EXPERIMENT_OCCLUDER_STYLE = "frosted"
 WILLIAMS_ORDERS = (
     ("no_feedback", "visual_feedback", "both_feedback", "audio_feedback"),
     ("visual_feedback", "audio_feedback", "no_feedback", "both_feedback"),
@@ -164,13 +164,13 @@ def parse_args():
     parser.add_argument(
         "--occluder-alpha",
         type=float,
-        default=DEFAULT_OCCLUDER_ALPHA,
+        default=EXPERIMENT_OCCLUDER_ALPHA,
         help="Occlusion obstacle opacity, from 0.0 transparent to 1.0 opaque.",
     )
     parser.add_argument(
         "--occluder-style",
         choices=OCCLUDER_STYLES,
-        default=DEFAULT_OCCLUDER_STYLE,
+        default=EXPERIMENT_OCCLUDER_STYLE,
         help="Occlusion obstacle visual style.",
     )
     return parser.parse_args()

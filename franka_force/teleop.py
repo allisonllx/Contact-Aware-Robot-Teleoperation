@@ -9,11 +9,15 @@ except ImportError:
     pynput_keyboard = None
 
 
+TELEOP_SPEED = 0.08
+KEY_NUDGE_STEP = 0.015
+
+
 def initialize_state(env):
     env.target_pos = np.zeros(3)
     env.target_rot = np.eye(3)
     env.target_roll = 0.0
-    env.teleop_speed = 0.10
+    env.teleop_speed = TELEOP_SPEED
     env.orientation_speed = 0.8
     env.roll_speed = 0.8
     env.gripper_closed = False
@@ -335,11 +339,10 @@ def sync_target_marker(env):
 
 
 def nudge_target(env, dx=0.0, dy=0.0, dz=0.0):
-    step = 0.02
     with env._teleop_lock:
-        env.target_pos[0] += dx * step
-        env.target_pos[1] += dy * step
-        env.target_pos[2] += dz * step
+        env.target_pos[0] += dx * KEY_NUDGE_STEP
+        env.target_pos[1] += dy * KEY_NUDGE_STEP
+        env.target_pos[2] += dz * KEY_NUDGE_STEP
 
 
 def set_gripper(env, closed):
