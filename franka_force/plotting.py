@@ -38,6 +38,9 @@ def plot_force_comparison(env):
     audio_contact_event = _history_array(env, "audio_contact_event_history", len(t), dtype=bool)
     audio_tick_rate = _history_array(env, "audio_tick_rate_history", len(t), dtype=float)
     audio_lateral_force = _history_array(env, "audio_lateral_force_history", len(t), dtype=float)
+    target_x = _history_array(env, "target_x_history", len(t), dtype=float)
+    target_y = _history_array(env, "target_y_history", len(t), dtype=float)
+    target_z = _history_array(env, "target_z_history", len(t), dtype=float)
 
     _write_filtered_csv(
         env.telemetry_filtered_path,
@@ -65,6 +68,9 @@ def plot_force_comparison(env):
         audio_contact_event,
         audio_tick_rate,
         audio_lateral_force,
+        target_x,
+        target_y,
+        target_z,
     )
 
     _save_plot(
@@ -165,6 +171,9 @@ def _write_filtered_csv(
     audio_contact_event,
     audio_tick_rate,
     audio_lateral_force,
+    target_x,
+    target_y,
+    target_z,
 ):
     with open(path, mode="w", newline="") as f:
         writer = csv.writer(f)
@@ -194,6 +203,9 @@ def _write_filtered_csv(
             "Audio Contact Event",
             "Audio Tick Rate (Hz)",
             "Audio Lateral Force (N)",
+            "Target X (m)",
+            "Target Y (m)",
+            "Target Z (m)",
         ])
         for i in np.where(is_clean)[0]:
             writer.writerow([
@@ -222,6 +234,9 @@ def _write_filtered_csv(
                 int(audio_contact_event[i]),
                 audio_tick_rate[i],
                 audio_lateral_force[i],
+                target_x[i],
+                target_y[i],
+                target_z[i],
             ])
     print(f"Saved filtered CSV to {path.resolve()}")
 

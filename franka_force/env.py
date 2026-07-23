@@ -232,6 +232,9 @@ class FrankaForceEnv:
         self.audio_contact_event_history = []
         self.audio_tick_rate_history = []
         self.audio_lateral_force_history = []
+        self.target_x_history = []
+        self.target_y_history = []
+        self.target_z_history = []
 
         self.step_counter = 0
         self.downsample_factor = 10
@@ -306,6 +309,9 @@ class FrankaForceEnv:
             "Audio Contact Event",
             "Audio Tick Rate (Hz)",
             "Audio Lateral Force (N)",
+            "Target X (m)",
+            "Target Y (m)",
+            "Target Z (m)",
         ])
 
         self.model = self._build_model()
@@ -433,6 +439,16 @@ class FrankaForceEnv:
             self.audio_contact_event_history.append(audio_contact_event)
             self.audio_tick_rate_history.append(self.latest_audio_tick_rate)
             self.audio_lateral_force_history.append(self.latest_audio_lateral_force)
+            target = getattr(self, "target_pos", None)
+            if target is None:
+                target_x = target_y = target_z = float("nan")
+            else:
+                target_x = float(target[0])
+                target_y = float(target[1])
+                target_z = float(target[2])
+            self.target_x_history.append(target_x)
+            self.target_y_history.append(target_y)
+            self.target_z_history.append(target_z)
 
             self.log_writer.writerow([
                 self.data.time,
@@ -461,6 +477,9 @@ class FrankaForceEnv:
                 int(audio_contact_event),
                 self.latest_audio_tick_rate,
                 self.latest_audio_lateral_force,
+                target_x,
+                target_y,
+                target_z,
             ])
             self.audio_contact_event_since_sample = False
 

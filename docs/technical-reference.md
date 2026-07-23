@@ -186,12 +186,26 @@ python3 analysis.py
 
 This reads each scenario's filtered CSV when available, falling back to the raw CSV otherwise, and writes `results/force_analysis_summary.csv`. The summary includes contact-only MAE, MSE, RMSE, bias, normalized error, 95th-percentile and peak absolute error, plus task/safety metrics such as completion time, peak contact force, contact duration, force impulse, and time above the selected force threshold.
 
+For a finished tester session, compare conditions with:
+
+```bash
+python3 analysis.py --experiment-dir experiment_results/jane_doe
+```
+
+That rewrites `experiment_analysis_summary.csv` and writes
+`condition_comparison_summary.csv` with per-condition means for success rate,
+wall-clock completion time, peak contact proxy / peak ground-truth force, time
+above threshold, jamming episode count (lateral force above
+`--jamming-threshold`, default 50 N), contact-episode count, and smoothness
+metrics (action jerk, velocity reversals, retractions) when target XYZ is
+logged.
+
 Useful options:
 
 ```bash
 python3 analysis.py --scenarios peg_in_hole push_block
 python3 analysis.py --source raw --include-anomalies
-python3 analysis.py --force-threshold 50
+python3 analysis.py --force-threshold 50 --jamming-threshold 50
 ```
 
 #### 8. Experiment runner
@@ -218,10 +232,17 @@ experiment_results/<tester>/<condition>/recorded_01/
 experiment_results/<tester>/<condition>/recorded_02/
 experiment_results/<tester>/<condition>/recorded_03/
 experiment_results/<tester>/experiment_analysis_summary.csv
+experiment_results/<tester>/condition_comparison_summary.csv
 experiment_results/<tester>/familiarization_analysis_summary.csv
 experiment_results/<tester>/practice_analysis_summary.csv
 experiment_results/<tester>.zip
 ```
+
+`condition_comparison_summary.csv` averages the recorded trials within each
+feedback condition (success rate, wall-clock completion time, peak forces,
+time above threshold, jamming counts, and smoothness metrics when available).
+The experiment runner prints that comparison when a session finishes, and you
+can regenerate it later with `python3 analysis.py --experiment-dir ...`.
 
 Useful options:
 

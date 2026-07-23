@@ -12,11 +12,20 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from analysis import SUMMARY_COLUMNS, analyze_result_dir, csv_value
+from analysis import (
+    SUMMARY_COLUMNS,
+    aggregate_condition_rows,
+    analyze_result_dir,
+    csv_value,
+    print_condition_summary,
+    write_condition_summary,
+)
 from franka_force.config import (
     DEFAULT_ACTUATOR_BOOST,
+    DEFAULT_FORCE_THRESHOLD_N,
     DEFAULT_HOLE_CLEARANCE_MM,
     DEFAULT_HOLD_TELEOP,
+    DEFAULT_JAMMING_THRESHOLD_N,
     DEFAULT_MAX_TRIAL_DURATION_S,
     DEFAULT_OCCLUDED_HOLE_X_RANGE,
     DEFAULT_OCCLUDED_HOLE_Y_RANGE,
@@ -147,8 +156,14 @@ def parse_args():
     parser.add_argument(
         "--force-threshold",
         type=float,
-        default=100.0,
+        default=DEFAULT_FORCE_THRESHOLD_N,
         help="Ground-truth force threshold for experiment analysis.",
+    )
+    parser.add_argument(
+        "--jamming-threshold",
+        type=float,
+        default=DEFAULT_JAMMING_THRESHOLD_N,
+        help="Lateral-force threshold in newtons used to count jamming episodes.",
     )
     parser.add_argument(
         "--hole-clearance-mm",
@@ -276,6 +291,7 @@ def main():
             plan=plan,
             trial_specs=trial_specs,
             force_threshold=args.force_threshold,
+            jamming_threshold=args.jamming_threshold,
         )
 
     if interrupted:
@@ -313,6 +329,8 @@ def validate_args(args):
     validate_range("--occluded-hole-y-range", args.occluded_hole_y_range)
     if args.force_threshold <= 0.0:
         raise ValueError("--force-threshold must be positive")
+    if args.jamming_threshold <= 0.0:
+        raise ValueError("--jamming-threshold must be positive")
     if not 0.0 <= args.occluder_alpha <= 1.0:
         raise ValueError("--occluder-alpha must be between 0.0 and 1.0")
     if args.teleop_nudge_step <= 0.0:
@@ -840,14 +858,29 @@ def trial_metadata(args, plan, trial, status):
     }
 
 
-def write_experiment_summaries(tester_dir, tester_name, tester_id, plan, trial_specs, force_threshold):
+def write_experiment_summaries(
+    tester_dir,
+    tester_name,
+    tester_id,
+    plan,
+    trial_specs,
+    force_threshold,
+    jamming_threshold=DEFAULT_JAMMING_THRESHOLD_N,
+):
     recorded_rows = []
     practice_rows = []
     familiarization_rows = []
     for trial in trial_specs:
         if not trial_completed(trial["trial_dir"]):
             continue
-        row = experiment_analysis_row(tester_name, tester_id, plan, trial, force_threshold)
+        row = experiment_analysis_row(
+            tester_name,
+            tester_id,
+            plan,
+            trial,
+            force_threshold,
+            jamming_threshold=jamming_threshold,
+        )
         if trial["trial_type"] == "recorded":
             recorded_rows.append(row)
         elif trial["trial_type"] == "familiarization":
@@ -858,20 +891,32 @@ def write_experiment_summaries(tester_dir, tester_name, tester_id, plan, trial_s
     recorded_path = tester_dir / "experiment_analysis_summary.csv"
     practice_path = tester_dir / "practice_analysis_summary.csv"
     familiarization_path = tester_dir / "familiarization_analysis_summary.csv"
+    condition_path = tester_dir / "condition_comparison_summary.csv"
     write_experiment_summary(recorded_path, recorded_rows)
     write_experiment_summary(practice_path, practice_rows)
     write_experiment_summary(familiarization_path, familiarization_rows)
+    condition_rows = aggregate_condition_rows(recorded_rows)
+    write_condition_summary(condition_path, condition_rows)
     print(f"\nSaved recorded-trial analysis to {recorded_path.resolve()}")
     print(f"Saved practice-trial analysis to {practice_path.resolve()}")
     print(f"Saved familiarization-trial analysis to {familiarization_path.resolve()}")
+    print_condition_summary(condition_rows, condition_path)
 
 
-def experiment_analysis_row(tester_name, tester_id, plan, trial, force_threshold):
+def experiment_analysis_row(
+    tester_name,
+    tester_id,
+    plan,
+    trial,
+    force_threshold,
+    jamming_threshold=DEFAULT_JAMMING_THRESHOLD_N,
+):
     metrics = analyze_result_dir(
         trial["trial_dir"],
         scenario=SCENARIO,
         source="auto",
         force_threshold=force_threshold,
+        jamming_threshold=jamming_threshold,
         include_anomalies=False,
     )
     row = {
@@ -892,13 +937,18 @@ def experiment_analysis_row(tester_name, tester_id, plan, trial, force_threshold
 
 
 def write_experiment_summary(path, rows):
+    fieldnames = EXPERIMENT_SUMMARY_COLUMNS
+    if rows:
+        # Keep a stable prefix, then include any newly added analysis columns.
+        extra = [key for key in rows[0].keys() if key not in fieldnames]
+        fieldnames = list(fieldnames) + extra
     with path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=EXPERIMENT_SUMMARY_COLUMNS)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for row in rows:
             writer.writerow({
                 key: csv_value(row.get(key, ""))
-                for key in EXPERIMENT_SUMMARY_COLUMNS
+                for key in fieldnames
             })
 
 
