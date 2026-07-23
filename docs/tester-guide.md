@@ -1,0 +1,115 @@
+# Tester Guide
+
+## What this project tests
+
+You will control a simulated Franka robot arm holding a peg. Your goal is to
+place the peg into a hole hidden behind a frosted wall. The hidden hole can move
+between trials, so its location should not be assumed from an earlier trial.
+
+The study compares four guidance modes:
+
+| Mode | What you receive |
+| --- | --- |
+| No feedback | No visual or audio force guidance |
+| Visual feedback | A force arrow and contact ring shown above the wall |
+| Audio feedback | A contact click and Geiger-like ticks that change with lateral force |
+| Visual + audio | Both forms of guidance |
+
+The order of these modes is automatically counterbalanced. By default, each
+mode has two practice trials followed by one measured trial, for 12 trials in
+total. Practice data is saved separately from the main experiment summary.
+
+## Before starting
+
+- Complete the [setup guide](setup.md).
+- Choose a tester ID in `firstname_lastname` format, such as `jane_doe`. Use
+  lowercase letters, numbers, underscores, dots, or hyphens only — no spaces.
+- Make sure the computer audio is on.
+- Keep the terminal visible between trials so you can see the next prompt.
+- Do not look inside result files for the randomized hole position during a
+  session.
+
+## Start or resume the experiment
+
+There is one experiment command:
+
+```bash
+python experiment.py --tester firstname_lastname
+```
+
+Replace `firstname_lastname` with your own ID (for example `jane_doe`). Reusing
+the same ID and command resumes an interrupted session and skips completed
+trials. This command is the same on macOS, Linux, and Windows; the runner
+handles the macOS `mjpython` requirement automatically.
+
+## Trial workflow
+
+For every trial:
+
+1. Read the next condition and trial type shown in the terminal.
+2. Press Enter only when the tester is ready.
+3. When the MuJoCo viewer opens, click inside it so it receives keyboard input.
+4. Move the peg to search for the hidden hole and insert it.
+5. The task succeeds after the peg maintains contact with the pad at the bottom
+   of the hole. A success message appears and the trial exits cleanly.
+6. Return to the terminal and repeat when prompted for the next trial.
+
+Move carefully near contact. The task records contact forces as well as
+completion and timing information.
+
+## Controls
+
+For the study itself, you mainly need the arrow keys and `8` / `9`. Each press
+moves the target by 5 mm. Hold-to-move is disabled in the standard experiment,
+so repeated movement requires repeated key presses.
+
+| Key | Action |
+| --- | --- |
+| Up arrow | Move north in +Y |
+| Down arrow | Move south in -Y |
+| Left arrow | Move west in -X |
+| Right arrow | Move east in +X |
+| `9` | Raise the peg in +Z |
+| `8` | Lower the peg in -Z |
+
+The peg starts locked pointing downward, which is the orientation needed for
+insertion. You do not need to change orientation or the gripper for a normal
+trial.
+
+The keys below are optional and listed only for reference:
+
+| Key | Action |
+| --- | --- |
+| Page Up / Page Down | Alternative raise / lower controls |
+| `6` / `7` | Rotate the downward-facing peg left / right about the vertical axis |
+| `,` / `.` | Open / close the gripper |
+
+> [!IMPORTANT]
+> Do not press `I`, `J`, `K`, or `U`. These are MuJoCo debug-view toggles, not
+> robot controls.
+
+## Understanding the feedback
+
+- The green visual marker means the visual system is waiting for contact.
+- The red/orange arrow indicates contact-force direction and magnitude.
+- The red/orange ring marks the strongest contact surface.
+- An audio click indicates contact above the configured threshold.
+- Geiger-like ticks begin with sufficient lateral force and become faster as
+  that force increases.
+
+Visual feedback is projected above and in front of the wall. It indicates force,
+not the hidden hole's exact position. Some trials intentionally provide only one
+type of feedback or no feedback.
+
+## Results
+
+Study files are stored under `experiment_results/<tester_id>/`, where
+`<tester_id>` matches the `--tester` value you used (for example
+`experiment_results/jane_doe/`). They include the condition plan, trial
+metadata, force telemetry, plots, and summary CSV files.
+
+When you finish, send that whole `experiment_results/<tester_id>/` folder back
+to the study organizer.
+
+If a session is interrupted, rerun the same experiment command with the same
+`--tester` ID. It resumes from the first incomplete trial.

@@ -14,7 +14,9 @@ from pathlib import Path
 
 from analysis import SUMMARY_COLUMNS, analyze_result_dir, csv_value
 from franka_force.config import (
+    DEFAULT_ACTUATOR_BOOST,
     DEFAULT_HOLE_CLEARANCE_MM,
+    DEFAULT_HOLD_TELEOP,
     DEFAULT_OCCLUDED_HOLE_X_RANGE,
     DEFAULT_OCCLUDED_HOLE_Y_RANGE,
     DEFAULT_PEG_ALPHA,
@@ -191,6 +193,18 @@ def parse_args():
         default=DEFAULT_TELEOP_SPEED,
         help="Keyboard hold-to-move speed in meters per second when pynput is installed.",
     )
+    parser.add_argument(
+        "--hold-teleop",
+        action="store_true",
+        default=DEFAULT_HOLD_TELEOP,
+        help="Enable continuous hold-to-move keyboard teleop via pynput.",
+    )
+    parser.add_argument(
+        "--actuator-boost",
+        type=float,
+        default=DEFAULT_ACTUATOR_BOOST,
+        help="Interactive arm actuator gain scale; lower values reduce lurching but feel softer.",
+    )
     return parser.parse_args()
 
 
@@ -277,6 +291,8 @@ def validate_args(args):
         raise ValueError("--teleop-nudge-step must be positive")
     if args.teleop_speed <= 0.0:
         raise ValueError("--teleop-speed must be positive")
+    if args.actuator_boost <= 0.0:
+        raise ValueError("--actuator-boost must be positive")
 
 
 def validate_range(name, values):
@@ -614,9 +630,13 @@ def build_trial_command(args, trial):
         str(args.teleop_nudge_step),
         "--teleop-speed",
         str(args.teleop_speed),
+        "--actuator-boost",
+        str(args.actuator_boost),
         "--results-dir",
         str(trial["trial_dir"].resolve()),
     ]
+    if args.hold_teleop:
+        command.append("--hold-teleop")
     if trial["visual_feedback"]:
         command.extend(["--force-feedback", "--force-visual", "both"])
     if trial["audio_feedback"]:
@@ -712,6 +732,8 @@ def trial_metadata(args, plan, trial, status):
         "occluder_style": args.occluder_style,
         "teleop_nudge_step": args.teleop_nudge_step,
         "teleop_speed": args.teleop_speed,
+        "hold_teleop": args.hold_teleop,
+        "actuator_boost": args.actuator_boost,
         "record_video": args.record_video,
         "record_force_feedback": args.record_force_feedback and trial["visual_feedback"],
     }

@@ -3,12 +3,14 @@ from pathlib import Path
 
 from franka_force import AUDIO_MODES, FORCE_VISUAL_MODES, SCENARIOS
 from franka_force.config import (
+    DEFAULT_ACTUATOR_BOOST,
     DEFAULT_AUDIO_CONTACT_THRESHOLD,
     DEFAULT_AUDIO_LATERAL_MAX,
     DEFAULT_AUDIO_LATERAL_THRESHOLD,
     DEFAULT_AUDIO_VOLUME,
     DEFAULT_CUSHION_THRESHOLD,
     DEFAULT_HOLE_CLEARANCE_MM,
+    DEFAULT_HOLD_TELEOP,
     DEFAULT_IMPEDANCE_DP,
     DEFAULT_IMPEDANCE_DR,
     DEFAULT_IMPEDANCE_KP,
@@ -226,6 +228,18 @@ def parse_args():
         default=DEFAULT_TELEOP_SPEED,
         help="Keyboard hold-to-move speed in meters per second when pynput is installed",
     )
+    parser.add_argument(
+        "--hold-teleop",
+        action="store_true",
+        default=DEFAULT_HOLD_TELEOP,
+        help="Enable continuous hold-to-move keyboard teleop via pynput",
+    )
+    parser.add_argument(
+        "--actuator-boost",
+        type=float,
+        default=DEFAULT_ACTUATOR_BOOST,
+        help="Interactive arm actuator gain scale; lower values reduce lurching but feel softer",
+    )
     return parser.parse_args()
 
 
@@ -268,5 +282,7 @@ if __name__ == "__main__":
         occluder_style=args.occluder_style,
         teleop_nudge_step=args.teleop_nudge_step,
         teleop_speed=args.teleop_speed,
+        hold_teleop=args.hold_teleop,
+        actuator_boost=args.actuator_boost,
     )
     env.run()

@@ -172,7 +172,10 @@ class PegInHoleScenario(Scenario):
         print()
         print("DO NOT press I, J, K, or U — those are MuJoCo debug toggles")
         print("(red collision boxes, joint axes, etc.), not robot controls.")
-        print("Hold arrow keys for smooth motion if pynput is installed.")
+        if env.hold_teleop:
+            print("Hold-to-move is ON via pynput.")
+        else:
+            print("Hold-to-move is OFF; each key press is one discrete nudge.")
         print("Peg orientation is locked pointing down; use 6/7 to spin it.")
         print(f"Hole clearance: {env.hole_clearance_mm:.2f} mm total.")
         if env._force_feedback_overlay_enabled():

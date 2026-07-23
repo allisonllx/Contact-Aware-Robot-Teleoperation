@@ -8,12 +8,14 @@ import numpy as np
 from .audio import AudioFeedback
 from .config import (
     AUDIO_MODES,
+    DEFAULT_ACTUATOR_BOOST,
     DEFAULT_AUDIO_CONTACT_THRESHOLD,
     DEFAULT_AUDIO_LATERAL_MAX,
     DEFAULT_AUDIO_LATERAL_THRESHOLD,
     DEFAULT_AUDIO_VOLUME,
     DEFAULT_CUSHION_THRESHOLD,
     DEFAULT_HOLE_CLEARANCE_MM,
+    DEFAULT_HOLD_TELEOP,
     DEFAULT_IMPEDANCE_DP,
     DEFAULT_IMPEDANCE_DR,
     DEFAULT_IMPEDANCE_KP,
@@ -74,6 +76,8 @@ class FrankaForceEnv:
         occluder_style=DEFAULT_OCCLUDER_STYLE,
         teleop_speed=DEFAULT_TELEOP_SPEED,
         teleop_nudge_step=DEFAULT_TELEOP_NUDGE_STEP,
+        hold_teleop=DEFAULT_HOLD_TELEOP,
+        actuator_boost=DEFAULT_ACTUATOR_BOOST,
         results_dir=None,
     ):
         if scenario not in SCENARIOS:
@@ -121,6 +125,8 @@ class FrankaForceEnv:
         self.occluder_style = occluder_style
         self.teleop_speed = teleop_speed
         self.teleop_nudge_step = teleop_nudge_step
+        self.hold_teleop = hold_teleop
+        self.actuator_boost = actuator_boost
 
         if force_feedback and not interactive:
             raise ValueError("force_feedback requires interactive=True")
@@ -168,6 +174,8 @@ class FrankaForceEnv:
             raise ValueError("teleop_speed must be positive")
         if teleop_nudge_step <= 0.0:
             raise ValueError("teleop_nudge_step must be positive")
+        if actuator_boost <= 0.0:
+            raise ValueError("actuator_boost must be positive")
 
         if self.randomize_occluded_hole:
             rng = np.random.default_rng(self.occluded_hole_seed)

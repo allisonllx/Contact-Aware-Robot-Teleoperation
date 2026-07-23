@@ -129,7 +129,9 @@ def resolve_ids(env):
         env.ik_target_mocap_id = env.model.body_mocapid[env.ik_target_body_id]
 
 
-def boost_arm_actuators(env, scale=10.0):
+def boost_arm_actuators(env, scale=None):
+    if scale is None:
+        scale = env.actuator_boost
     for i in range(7):
         env.model.actuator_gainprm[i, 0] *= scale
         env.model.actuator_biasprm[i, 1] *= scale
@@ -175,7 +177,10 @@ def print_controls(
     print()
     print("DO NOT press I, J, K, or U - those are MuJoCo debug toggles")
     print("(red collision boxes, joint axes, etc.), not robot controls.")
-    print("Hold arrow keys for smooth motion if pynput is installed.")
+    if env.hold_teleop:
+        print("Hold-to-move is ON via pynput.")
+    else:
+        print("Hold-to-move is OFF; each key press is one discrete nudge.")
     if orientation_note:
         print(orientation_note)
 
@@ -230,6 +235,12 @@ def before_step(env, dt, roll_enabled=False, orientation_enabled=False):
 
 
 def start(env, roll_enabled=False, orientation_enabled=False):
+    if not env.hold_teleop:
+        with env._teleop_lock:
+            env._move_cmd[:] = 0.0
+            env._orientation_cmd[:] = 0.0
+            env._roll_cmd = 0.0
+        return
     if pynput_keyboard is None:
         print("Note: install pynput for smoother hold-to-move teleop (pip install pynput).")
         return
@@ -237,78 +248,78 @@ def start(env, roll_enabled=False, orientation_enabled=False):
     def on_press(key):
         try:
             if key == pynput_keyboard.Key.up:
-                adjust_move_cmd(env, 1, 1.0)
+                set_move_cmd(env, 1, 1.0)
             elif key == pynput_keyboard.Key.down:
-                adjust_move_cmd(env, 1, -1.0)
+                set_move_cmd(env, 1, -1.0)
             elif key == pynput_keyboard.Key.right:
-                adjust_move_cmd(env, 0, 1.0)
+                set_move_cmd(env, 0, 1.0)
             elif key == pynput_keyboard.Key.left:
-                adjust_move_cmd(env, 0, -1.0)
+                set_move_cmd(env, 0, -1.0)
             elif key == pynput_keyboard.Key.page_up:
-                adjust_move_cmd(env, 2, 1.0)
+                set_move_cmd(env, 2, 1.0)
             elif key == pynput_keyboard.Key.page_down:
-                adjust_move_cmd(env, 2, -1.0)
+                set_move_cmd(env, 2, -1.0)
             elif hasattr(key, "char") and key.char == "9":
-                adjust_move_cmd(env, 2, 1.0)
+                set_move_cmd(env, 2, 1.0)
             elif hasattr(key, "char") and key.char == "8":
-                adjust_move_cmd(env, 2, -1.0)
+                set_move_cmd(env, 2, -1.0)
             elif hasattr(key, "char") and key.char == ",":
                 set_gripper(env, False)
             elif hasattr(key, "char") and key.char == ".":
                 set_gripper(env, True)
             elif roll_enabled and hasattr(key, "char") and key.char == "6":
-                adjust_roll_cmd(env, -1.0)
+                set_roll_cmd(env, -1.0)
             elif roll_enabled and hasattr(key, "char") and key.char == "7":
-                adjust_roll_cmd(env, 1.0)
+                set_roll_cmd(env, 1.0)
             elif orientation_enabled and hasattr(key, "char") and key.char == "[":
-                adjust_orientation_cmd(env, 1, -1.0)
+                set_orientation_cmd(env, 1, -1.0)
             elif orientation_enabled and hasattr(key, "char") and key.char == "]":
-                adjust_orientation_cmd(env, 1, 1.0)
+                set_orientation_cmd(env, 1, 1.0)
             elif orientation_enabled and hasattr(key, "char") and key.char == "-":
-                adjust_orientation_cmd(env, 2, -1.0)
+                set_orientation_cmd(env, 2, -1.0)
             elif orientation_enabled and hasattr(key, "char") and key.char == "=":
-                adjust_orientation_cmd(env, 2, 1.0)
+                set_orientation_cmd(env, 2, 1.0)
             elif orientation_enabled and hasattr(key, "char") and key.char == "6":
-                adjust_orientation_cmd(env, 0, -1.0)
+                set_orientation_cmd(env, 0, -1.0)
             elif orientation_enabled and hasattr(key, "char") and key.char == "7":
-                adjust_orientation_cmd(env, 0, 1.0)
+                set_orientation_cmd(env, 0, 1.0)
         except Exception:
             pass
 
     def on_release(key):
         try:
             if key == pynput_keyboard.Key.up:
-                adjust_move_cmd(env, 1, -1.0)
+                clear_move_cmd(env, 1, 1.0)
             elif key == pynput_keyboard.Key.down:
-                adjust_move_cmd(env, 1, 1.0)
+                clear_move_cmd(env, 1, -1.0)
             elif key == pynput_keyboard.Key.right:
-                adjust_move_cmd(env, 0, -1.0)
+                clear_move_cmd(env, 0, 1.0)
             elif key == pynput_keyboard.Key.left:
-                adjust_move_cmd(env, 0, 1.0)
+                clear_move_cmd(env, 0, -1.0)
             elif key == pynput_keyboard.Key.page_up:
-                adjust_move_cmd(env, 2, -1.0)
+                clear_move_cmd(env, 2, 1.0)
             elif key == pynput_keyboard.Key.page_down:
-                adjust_move_cmd(env, 2, 1.0)
+                clear_move_cmd(env, 2, -1.0)
             elif hasattr(key, "char") and key.char == "9":
-                adjust_move_cmd(env, 2, -1.0)
+                clear_move_cmd(env, 2, 1.0)
             elif hasattr(key, "char") and key.char == "8":
-                adjust_move_cmd(env, 2, 1.0)
+                clear_move_cmd(env, 2, -1.0)
             elif roll_enabled and hasattr(key, "char") and key.char == "6":
-                adjust_roll_cmd(env, 1.0)
+                clear_roll_cmd(env, -1.0)
             elif roll_enabled and hasattr(key, "char") and key.char == "7":
-                adjust_roll_cmd(env, -1.0)
+                clear_roll_cmd(env, 1.0)
             elif orientation_enabled and hasattr(key, "char") and key.char == "[":
-                adjust_orientation_cmd(env, 1, 1.0)
+                clear_orientation_cmd(env, 1, -1.0)
             elif orientation_enabled and hasattr(key, "char") and key.char == "]":
-                adjust_orientation_cmd(env, 1, -1.0)
+                clear_orientation_cmd(env, 1, 1.0)
             elif orientation_enabled and hasattr(key, "char") and key.char == "-":
-                adjust_orientation_cmd(env, 2, 1.0)
+                clear_orientation_cmd(env, 2, -1.0)
             elif orientation_enabled and hasattr(key, "char") and key.char == "=":
-                adjust_orientation_cmd(env, 2, -1.0)
+                clear_orientation_cmd(env, 2, 1.0)
             elif orientation_enabled and hasattr(key, "char") and key.char == "6":
-                adjust_orientation_cmd(env, 0, 1.0)
+                clear_orientation_cmd(env, 0, -1.0)
             elif orientation_enabled and hasattr(key, "char") and key.char == "7":
-                adjust_orientation_cmd(env, 0, -1.0)
+                clear_orientation_cmd(env, 0, 1.0)
         except Exception:
             pass
 
@@ -375,6 +386,39 @@ def adjust_orientation_cmd(env, axis, delta):
 def adjust_move_cmd(env, axis, delta):
     with env._teleop_lock:
         env._move_cmd[axis] = np.clip(env._move_cmd[axis] + delta, -1.0, 1.0)
+
+
+def set_move_cmd(env, axis, value):
+    with env._teleop_lock:
+        env._move_cmd[axis] = value
+
+
+def clear_move_cmd(env, axis, value):
+    with env._teleop_lock:
+        if env._move_cmd[axis] == value:
+            env._move_cmd[axis] = 0.0
+
+
+def set_roll_cmd(env, value):
+    with env._teleop_lock:
+        env._roll_cmd = value
+
+
+def clear_roll_cmd(env, value):
+    with env._teleop_lock:
+        if env._roll_cmd == value:
+            env._roll_cmd = 0.0
+
+
+def set_orientation_cmd(env, axis, value):
+    with env._teleop_lock:
+        env._orientation_cmd[axis] = value
+
+
+def clear_orientation_cmd(env, axis, value):
+    with env._teleop_lock:
+        if env._orientation_cmd[axis] == value:
+            env._orientation_cmd[axis] = 0.0
 
 
 def apply_motion(env, dt, roll_enabled=False, orientation_enabled=False):
