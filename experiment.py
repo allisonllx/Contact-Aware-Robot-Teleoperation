@@ -32,7 +32,7 @@ EXPERIMENT_ROOT = Path("experiment_results")
 REPO_ROOT = Path(__file__).resolve().parent
 SCENARIO = "peg_in_hole"
 CONDITIONS = ("no_feedback", "visual_feedback", "audio_feedback", "both_feedback")
-EXPERIMENT_OCCLUDER_ALPHA = 0.8
+EXPERIMENT_OCCLUDER_ALPHA = 0.75
 EXPERIMENT_OCCLUDER_STYLE = "frosted"
 TRIAL_METADATA_NAME = "trial_metadata.json"
 TRIAL_OUTCOME_NAME = "trial_outcome.json"
@@ -130,8 +130,9 @@ def parse_args():
     )
     parser.add_argument(
         "--record-video",
-        action="store_true",
-        help="Record MP4 video for each trial.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Record MP4 video for each trial (default: on). Use --no-record-video to disable.",
     )
     parser.add_argument(
         "--record-force-feedback",
@@ -511,6 +512,7 @@ def print_experiment_overview(tester_name, tester_dir, plan, trial_specs, dry_ru
         print(f"Trial time limit: {args.max_trial_duration:.0f}s wall clock.")
     else:
         print("Trial time limit: disabled.")
+    print(f"Video recording: {'ON' if args.record_video else 'OFF'}.")
     if plan.get("loaded_existing_plan"):
         print("Using existing experiment_plan.json.")
     print_progress_summary(trial_specs)

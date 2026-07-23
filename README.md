@@ -16,9 +16,9 @@ scenarios used during development.
 | Task | Insert a downward-facing peg into an occluded hole |
 | Control | Discrete keyboard movement in X, Y, and Z |
 | Guidance modes | No feedback, visual, audio, and visual + audio |
-| Study structure | 1 familiarization trial, then 3 measured trials per mode (2 min each) |
+| Study structure | 1 familiarization trial, then 3 measured trials per mode (2.5 min each) |
 | Main command | `python experiment.py --tester firstname_lastname` |
-| Output | Per-tester results under `experiment_results/`, plus a zip when the session finishes |
+| Output | Per-tester results + trial videos under `experiment_results/`, zipped when the session finishes |
 
 ## Documentation
 

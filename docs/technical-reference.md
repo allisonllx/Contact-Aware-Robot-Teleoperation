@@ -203,7 +203,7 @@ python3 experiment.py --tester pilot --dry-run
 mjpython experiment.py --tester tester_01
 ```
 
-By default, the runner uses `peg_in_hole` with `--interactive --occluded-task --randomize-occluded-hole`, assigns or reuses a counterbalanced condition order, and runs `no_feedback`, `visual_feedback`, `audio_feedback`, and `both_feedback`. The session starts with one no-feedback familiarization trial, then runs three recorded trials per condition. Familiarization and optional practice data are saved but excluded from the main experiment summary. Each trial has a 120-second wall-clock time limit (`--max-trial-duration`); on success or timeout the MuJoCo window closes automatically and the runner advances. Experiment trials use a frosted occluder with `--occluder-alpha 0.8`, a 5 mm keyboard nudge step, hold-to-move disabled, and a softer interactive actuator boost to reduce lurching.
+By default, the runner uses `peg_in_hole` with `--interactive --occluded-task --randomize-occluded-hole`, assigns or reuses a counterbalanced condition order, and runs `no_feedback`, `visual_feedback`, `audio_feedback`, and `both_feedback`. The session starts with one no-feedback familiarization trial, then runs three recorded trials per condition. Familiarization and optional practice data are saved but excluded from the main experiment summary. Each trial has a 150-second wall-clock time limit (`--max-trial-duration`); on success or timeout the MuJoCo window closes automatically and the runner advances. Video recording is on by default (`run_recording.mp4` in each trial folder); pass `--no-record-video` to disable it. Experiment trials use a frosted occluder with `--occluder-alpha 0.8`, a 5 mm keyboard nudge step, hold-to-move disabled, and a softer interactive actuator boost to reduce lurching.
 
 Each trial is launched as a fresh `main.py` subprocess so the MuJoCo viewer is not reopened repeatedly inside one long-running Python process. On macOS, the runner uses `mjpython` for trial subprocesses when it is available on PATH; otherwise it falls back to the current Python executable. Use `--trial-python mjpython` if your shell needs the launcher to be explicit.
 
@@ -228,11 +228,12 @@ Useful options:
 ```bash
 python3 experiment.py --tester pilot --dry-run
 python3 experiment.py --tester jane_doe --familiarization-trials 1 --recorded-trials 3
-python3 experiment.py --tester jane_doe --max-trial-duration 120
+python3 experiment.py --tester jane_doe --max-trial-duration 150
 python3 experiment.py --tester jane_doe --max-trial-duration 0
+python3 experiment.py --tester jane_doe --no-record-video
 mjpython experiment.py --tester pilot --conditions no_feedback --familiarization-trials 0 --recorded-trials 1
 python3 experiment.py --tester jane_doe --order no_feedback visual_feedback audio_feedback both_feedback --dry-run
-mjpython experiment.py --tester jane_doe --base-seed 123 --record-video
+mjpython experiment.py --tester jane_doe --base-seed 123
 mjpython experiment.py --tester jane_doe --occluder-alpha 0.85 --occluder-style frosted
 mjpython experiment.py --tester jane_doe --teleop-nudge-step 0.003
 mjpython experiment.py --tester jane_doe --actuator-boost 3.0
@@ -278,10 +279,10 @@ Avoid `I`, `J`, `K`, and `U` in the MuJoCo viewer because they toggle debug visu
 | `--audio-mode` | Audio feedback | Choose `contact`, `geiger`, or `both`. |
 | `--audio-contact-threshold` | Audio feedback | Set the Jacobian-estimate threshold for the contact click. |
 | `--audio-lateral-threshold`, `--audio-lateral-max`, `--audio-volume` | Audio feedback | Tune Geiger ticking thresholds and cue volume. |
-| `--record-video` | All scenarios | Save `run_recording.mp4` under `results/<scenario>/`. |
+| `--record-video` / `--no-record-video` | `experiment.py` / all scenarios | Save `run_recording.mp4` per trial. On for the experiment runner by default; use `--no-record-video` to disable. |
 | `--record-force-feedback` | Video recording | Include force-feedback overlay geoms in the MP4. |
 | `--results-dir` | All runs | Override where CSVs, plots, and optional video are saved. Used by `experiment.py` trial subprocesses. |
-| `--max-trial-duration` | Interactive / experiment trials | Wall-clock seconds before a trial auto-closes. Experiment default is `120`; use `0` on `experiment.py` to disable. |
+| `--max-trial-duration` | Interactive / experiment trials | Wall-clock seconds before a trial auto-closes. Experiment default is `150`; use `0` on `experiment.py` to disable. |
 | `--familiarization-trials` | `experiment.py` | One-time no-feedback warm-up trials before the measured conditions. Default is `1`. |
 | `--recorded-trials` | `experiment.py` | Measured trials per condition. Default is `3`. |
 | `--practice-trials` | `experiment.py` | Optional per-condition practice trials excluded from the main summary. Default is `0`. |

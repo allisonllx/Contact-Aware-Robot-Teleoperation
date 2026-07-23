@@ -21,16 +21,29 @@ class VideoRecorder:
 
     def start(self):
         try:
-            import imageio
+            import imageio.v2 as imageio
         except ImportError as exc:
             raise RuntimeError(
                 "Video recording requires imageio. Install with: pip install imageio imageio-ffmpeg"
             ) from exc
 
+        try:
+            import imageio_ffmpeg  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                "Video recording requires imageio-ffmpeg (imageio fell back to a non-video writer). "
+                "Install with: pip install imageio-ffmpeg"
+            ) from exc
+
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Force FFMPEG so imageio does not pick an unrelated plugin (e.g. tifffile).
         self._writer = imageio.get_writer(
             str(self.path),
+            format="FFMPEG",
+            mode="I",
             fps=self.fps,
+            codec="libx264",
+            pixelformat="yuv420p",
             macro_block_size=1,
         )
 
