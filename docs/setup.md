@@ -5,17 +5,28 @@
 - macOS, Linux, or Windows with Python 3
 - A keyboard with arrow keys and number keys
 - Working speakers or headphones for audio-feedback trials
-- A terminal opened at the repository root
+- Git installed (`git --version` should print a version)
+- A terminal
 
 The experiment itself is launched with `python` on every operating system. On
 macOS, the experiment runner automatically uses `mjpython` for the interactive
 MuJoCo trial processes. `mjpython` is installed with the `mujoco` Python
 package.
 
+## Clone the repository
+
+In a terminal, clone the project and enter its folder:
+
+```bash
+git clone https://github.com/allisonllx/Contact-Aware-Robot-Teleoperation.git
+cd Contact-Aware-Robot-Teleoperation
+```
+
+All later setup commands assume your terminal is in this repository root.
+
 ## Create the environment
 
-Open a terminal in the repository root, then follow the instructions for your
-operating system.
+Follow the instructions for your operating system.
 
 ### macOS or Linux
 
@@ -87,8 +98,8 @@ already present.
 
 Before starting a tester session:
 
-1. Activate the virtual environment.
-2. Run commands from the repository root.
+1. Confirm you cloned the repository and your terminal is in its root folder.
+2. Activate the virtual environment.
 3. Confirm that the Franka scene file exists at
    `mujoco_menagerie/franka_emika_panda/scene.xml`.
 4. Confirm that the activated environment's Python command works:
