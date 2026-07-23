@@ -16,9 +16,9 @@ scenarios used during development.
 | Task | Insert a downward-facing peg into an occluded hole |
 | Control | Discrete keyboard movement in X, Y, and Z |
 | Guidance modes | No feedback, visual, audio, and visual + audio |
-| Study structure | 2 practice trials and 1 measured trial per mode |
+| Study structure | 1 familiarization trial, then 3 measured trials per mode (2 min each) |
 | Main command | `python experiment.py --tester firstname_lastname` |
-| Output | Per-tester plans, telemetry, metadata, plots, and summary CSVs in `experiment_results/` |
+| Output | Per-tester results under `experiment_results/`, plus a zip when the session finishes |
 
 ## Documentation
 
@@ -42,5 +42,7 @@ the controls in the [tester guide](docs/tester-guide.md).
 
 The experiment runner creates a counterbalanced plan the first time an ID is
 used. Running the same command again resumes that tester and skips completed
-trials. On macOS, the runner automatically uses `mjpython` for the interactive
-MuJoCo trial processes when it is available.
+trials. When every trial is finished, it writes
+`experiment_results/<tester_id>.zip` and prints the path so you can send the
+results back. On macOS, the runner automatically uses `mjpython` for the
+interactive MuJoCo trial processes when it is available.

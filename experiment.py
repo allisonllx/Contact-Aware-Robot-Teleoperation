@@ -9,7 +9,7 @@ import shutil
 import signal
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from analysis import SUMMARY_COLUMNS, analyze_result_dir, csv_value
@@ -17,6 +17,7 @@ from franka_force.config import (
     DEFAULT_ACTUATOR_BOOST,
     DEFAULT_HOLE_CLEARANCE_MM,
     DEFAULT_HOLD_TELEOP,
+    DEFAULT_MAX_TRIAL_DURATION_S,
     DEFAULT_OCCLUDED_HOLE_X_RANGE,
     DEFAULT_OCCLUDED_HOLE_Y_RANGE,
     DEFAULT_PEG_ALPHA,
@@ -34,6 +35,7 @@ CONDITIONS = ("no_feedback", "visual_feedback", "audio_feedback", "both_feedback
 EXPERIMENT_OCCLUDER_ALPHA = 0.8
 EXPERIMENT_OCCLUDER_STYLE = "frosted"
 TRIAL_METADATA_NAME = "trial_metadata.json"
+TRIAL_OUTCOME_NAME = "trial_outcome.json"
 RAW_LOG_NAME = "force_verification_log.csv"
 FILTERED_LOG_NAME = "force_verification_log_filtered.csv"
 WILLIAMS_ORDERS = (
@@ -84,16 +86,28 @@ def parse_args():
         help="Manual condition order. Must contain the same conditions selected by --conditions.",
     )
     parser.add_argument(
+        "--familiarization-trials",
+        type=int,
+        default=1,
+        help="One-time no-feedback familiarization trials before the measured conditions.",
+    )
+    parser.add_argument(
         "--practice-trials",
         type=int,
-        default=2,
-        help="Practice trials per condition.",
+        default=0,
+        help="Optional practice trials per condition (excluded from the main summary).",
     )
     parser.add_argument(
         "--recorded-trials",
         type=int,
-        default=1,
-        help="Recorded trials per condition.",
+        default=3,
+        help="Measured trials per condition.",
+    )
+    parser.add_argument(
+        "--max-trial-duration",
+        type=float,
+        default=DEFAULT_MAX_TRIAL_DURATION_S,
+        help="Wall-clock seconds before a trial auto-closes and advances. Use 0 to disable.",
     )
     parser.add_argument(
         "--base-seed",
@@ -225,8 +239,10 @@ def main():
         experiment_root=args.experiment_root,
         selected_conditions=selected_conditions,
         manual_order=tuple(args.order) if args.order else None,
+        familiarization_trials=args.familiarization_trials,
         practice_trials=args.practice_trials,
         recorded_trials=args.recorded_trials,
+        max_trial_duration=args.max_trial_duration,
         base_seed=args.base_seed,
     )
     ensure_selected_conditions_in_plan(selected_conditions, plan)
@@ -246,7 +262,7 @@ def main():
                 print(f"\nSkipping completed trial: {trial['trial_dir']}")
                 continue
             print_resume_note(trial, state, args.rerun_existing)
-            wait_for_trial(trial)
+            wait_for_trial(trial, args)
             run_trial(args, plan, trial)
     except KeyboardInterrupt:
         interrupted = True
@@ -264,14 +280,25 @@ def main():
     if interrupted:
         raise SystemExit(130)
 
+    if all(trial_completed(trial["trial_dir"]) for trial in trial_specs):
+        zip_path = zip_tester_results(tester_dir)
+        print(f"\nExperiment complete. Send this zip file:")
+        print(f"  {zip_path}")
+    else:
+        print("\nExperiment not fully complete yet. Rerun the same tester command to resume.")
+
 
 def validate_args(args):
+    if args.familiarization_trials < 0:
+        raise ValueError("--familiarization-trials must be non-negative")
     if args.practice_trials < 0:
         raise ValueError("--practice-trials must be non-negative")
     if args.recorded_trials < 0:
         raise ValueError("--recorded-trials must be non-negative")
-    if args.practice_trials == 0 and args.recorded_trials == 0:
-        raise ValueError("At least one practice or recorded trial is required")
+    if args.familiarization_trials == 0 and args.practice_trials == 0 and args.recorded_trials == 0:
+        raise ValueError("At least one familiarization, practice, or recorded trial is required")
+    if args.max_trial_duration < 0.0:
+        raise ValueError("--max-trial-duration must be non-negative (0 disables the limit)")
     if args.record_force_feedback and not args.record_video:
         raise ValueError("--record-force-feedback requires --record-video")
     if len(set(args.conditions)) != len(args.conditions):
@@ -328,8 +355,10 @@ def load_or_create_plan(
     experiment_root,
     selected_conditions,
     manual_order,
+    familiarization_trials,
     practice_trials,
     recorded_trials,
+    max_trial_duration,
     base_seed,
 ):
     plan_path = tester_dir / "experiment_plan.json"
@@ -362,8 +391,10 @@ def load_or_create_plan(
         "conditions": list(selected_conditions),
         "condition_order": condition_order,
         "order_index": order_index,
+        "familiarization_trials": familiarization_trials,
         "practice_trials": practice_trials,
         "recorded_trials": recorded_trials,
+        "max_trial_duration": max_trial_duration,
         "base_seed": base_seed,
         "generated_seed_base": generated_seed_base,
         "created_at": now,
@@ -415,6 +446,25 @@ def build_trial_specs(args, tester_name, tester_id, tester_dir, plan, selected_c
         raise ValueError("No selected conditions appear in the assigned experiment order")
     seed_base = plan["base_seed"] if plan.get("base_seed") is not None else plan["generated_seed_base"]
     specs = []
+
+    for trial_index in range(1, args.familiarization_trials + 1):
+        trial_name = f"familiarization_{trial_index:02d}"
+        trial_dir = tester_dir / "familiarization" / trial_name
+        seed = trial_seed(seed_base, tester_id, "familiarization", "familiarization", trial_index)
+        specs.append({
+            "tester": tester_name,
+            "tester_id": tester_id,
+            "condition": "no_feedback",
+            "condition_position": 0,
+            "trial_type": "familiarization",
+            "trial_index": trial_index,
+            "trial_name": trial_name,
+            "trial_dir": trial_dir,
+            "seed": seed,
+            "visual_feedback": False,
+            "audio_feedback": False,
+        })
+
     for condition_position, condition in enumerate(run_order, start=1):
         for trial_type, trial_count in (
             ("practice", args.practice_trials),
@@ -451,6 +501,16 @@ def print_experiment_overview(tester_name, tester_dir, plan, trial_specs, dry_ru
     print(f"Tester: {tester_name}")
     print(f"Output folder: {tester_dir.resolve()}")
     print(f"Condition order: {' -> '.join(plan['condition_order'])}")
+    print(
+        f"Structure: {args.familiarization_trials} familiarization "
+        f"(no feedback), then {args.recorded_trials} recorded trials per condition"
+        + (f", plus {args.practice_trials} practice per condition" if args.practice_trials else "")
+        + "."
+    )
+    if args.max_trial_duration > 0.0:
+        print(f"Trial time limit: {args.max_trial_duration:.0f}s wall clock.")
+    else:
+        print("Trial time limit: disabled.")
     if plan.get("loaded_existing_plan"):
         print("Using existing experiment_plan.json.")
     print_progress_summary(trial_specs)
@@ -458,9 +518,13 @@ def print_experiment_overview(tester_name, tester_dir, plan, trial_specs, dry_ru
     for trial in trial_specs:
         flags = condition_flags_for_display(trial)
         state = trial_state(trial["trial_dir"])
+        label = (
+            f"familiarization / {trial['trial_name']}"
+            if trial["trial_type"] == "familiarization"
+            else f"{trial['condition_position']}. {trial['condition']} / {trial['trial_name']}"
+        )
         print(
-            f"{trial['condition_position']}. {trial['condition']} / "
-            f"{trial['trial_name']} / seed={trial['seed']} / {flags} / "
+            f"{label} / seed={trial['seed']} / {flags} / "
             f"{trial_status_for_display(state)}"
         )
         print(f"   {trial['trial_dir']}")
@@ -469,6 +533,8 @@ def print_experiment_overview(tester_name, tester_dir, plan, trial_specs, dry_ru
 
 
 def condition_flags_for_display(trial):
+    if trial["trial_type"] == "familiarization":
+        return "no feedback (familiarization)"
     flags = []
     if trial["visual_feedback"]:
         flags.append("visual")
@@ -543,12 +609,23 @@ def trial_status_for_display(state):
     return f"status={status}"
 
 
-def wait_for_trial(trial):
+def wait_for_trial(trial, args):
     print("\n" + "-" * 72)
-    print(f"Next trial: {trial['condition']} / {trial['trial_name']}")
+    if trial["trial_type"] == "familiarization":
+        print(f"Next trial: familiarization / {trial['trial_name']} (no feedback)")
+        print("This is a one-time practice run to learn the controls.")
+    else:
+        print(f"Next trial: {trial['condition']} / {trial['trial_name']}")
     print(f"Output: {trial['trial_dir']}")
     print(f"Feedback: {condition_flags_for_display(trial)}")
-    print("Press Enter when the tester is ready. Close the MuJoCo window after the trial.")
+    if args.max_trial_duration > 0.0:
+        print(
+            f"Time limit: {args.max_trial_duration:.0f}s. "
+            "The MuJoCo window closes automatically on success or timeout."
+        )
+    else:
+        print("No time limit. The MuJoCo window closes automatically on success.")
+    print("Press Enter when the tester is ready.")
     input()
 
 
@@ -635,6 +712,8 @@ def build_trial_command(args, trial):
         "--results-dir",
         str(trial["trial_dir"].resolve()),
     ]
+    if args.max_trial_duration > 0.0:
+        command.extend(["--max-trial-duration", str(args.max_trial_duration)])
     if args.hold_teleop:
         command.append("--hold-teleop")
     if trial["visual_feedback"]:
@@ -657,29 +736,48 @@ def trial_python(args):
 
 
 def read_trial_outcome(trial_dir):
+    outcome = {}
+    outcome_path = trial_dir / TRIAL_OUTCOME_NAME
+    if outcome_path.exists():
+        try:
+            with outcome_path.open() as f:
+                saved = json.load(f)
+            if isinstance(saved, dict):
+                outcome.update({
+                    "task_success": bool(saved.get("task_success", False)),
+                    "timed_out": bool(saved.get("timed_out", False)),
+                    "wall_time_elapsed_s": saved.get("wall_time_elapsed_s"),
+                    "sim_time_s": saved.get("sim_time_s"),
+                    "success_hold_time": saved.get("success_hold_time"),
+                })
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+
     log_path = trial_dir / FILTERED_LOG_NAME
     if not log_path.exists():
         log_path = trial_dir / RAW_LOG_NAME
     if not log_path.exists():
-        return {}
+        return outcome
 
     with log_path.open(newline="") as f:
         rows = list(csv.DictReader(f))
     if not rows:
-        return {}
+        return outcome
 
-    return {
-        "task_success": any_csv_bool(rows, "Task Success"),
-        "success_hold_time": max_csv_float(rows, "Success Hold Time", default=0.0),
-        "occluded_hole_world_pos": [
-            first_csv_float(rows, "Occluded Hole X (m)"),
-            first_csv_float(rows, "Occluded Hole Y (m)"),
-        ],
-        "occluded_hole_offset": [
-            first_csv_float(rows, "Occluded Hole Offset X (m)"),
-            first_csv_float(rows, "Occluded Hole Offset Y (m)"),
-        ],
-    }
+    outcome.setdefault("task_success", any_csv_bool(rows, "Task Success"))
+    outcome.setdefault(
+        "success_hold_time",
+        max_csv_float(rows, "Success Hold Time", default=0.0),
+    )
+    outcome["occluded_hole_world_pos"] = [
+        first_csv_float(rows, "Occluded Hole X (m)"),
+        first_csv_float(rows, "Occluded Hole Y (m)"),
+    ]
+    outcome["occluded_hole_offset"] = [
+        first_csv_float(rows, "Occluded Hole Offset X (m)"),
+        first_csv_float(rows, "Occluded Hole Offset Y (m)"),
+    ]
+    return outcome
 
 
 def any_csv_bool(rows, column):
@@ -734,6 +832,7 @@ def trial_metadata(args, plan, trial, status):
         "teleop_speed": args.teleop_speed,
         "hold_teleop": args.hold_teleop,
         "actuator_boost": args.actuator_boost,
+        "max_trial_duration": args.max_trial_duration,
         "record_video": args.record_video,
         "record_force_feedback": args.record_force_feedback and trial["visual_feedback"],
     }
@@ -742,21 +841,27 @@ def trial_metadata(args, plan, trial, status):
 def write_experiment_summaries(tester_dir, tester_name, tester_id, plan, trial_specs, force_threshold):
     recorded_rows = []
     practice_rows = []
+    familiarization_rows = []
     for trial in trial_specs:
         if not trial_completed(trial["trial_dir"]):
             continue
         row = experiment_analysis_row(tester_name, tester_id, plan, trial, force_threshold)
         if trial["trial_type"] == "recorded":
             recorded_rows.append(row)
+        elif trial["trial_type"] == "familiarization":
+            familiarization_rows.append(row)
         else:
             practice_rows.append(row)
 
     recorded_path = tester_dir / "experiment_analysis_summary.csv"
     practice_path = tester_dir / "practice_analysis_summary.csv"
+    familiarization_path = tester_dir / "familiarization_analysis_summary.csv"
     write_experiment_summary(recorded_path, recorded_rows)
     write_experiment_summary(practice_path, practice_rows)
+    write_experiment_summary(familiarization_path, familiarization_rows)
     print(f"\nSaved recorded-trial analysis to {recorded_path.resolve()}")
     print(f"Saved practice-trial analysis to {practice_path.resolve()}")
+    print(f"Saved familiarization-trial analysis to {familiarization_path.resolve()}")
 
 
 def experiment_analysis_row(tester_name, tester_id, plan, trial, force_threshold):
@@ -795,6 +900,15 @@ def write_experiment_summary(path, rows):
             })
 
 
+def zip_tester_results(tester_dir):
+    tester_dir = Path(tester_dir).resolve()
+    archive_base = tester_dir.parent / tester_dir.name
+    zip_path = Path(
+        shutil.make_archive(str(archive_base), "zip", root_dir=tester_dir.parent, base_dir=tester_dir.name)
+    )
+    return zip_path.resolve()
+
+
 def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     serializable = dict(data)
@@ -815,7 +929,7 @@ def read_json_if_exists(path):
 
 
 def utc_now():
-    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 if __name__ == "__main__":

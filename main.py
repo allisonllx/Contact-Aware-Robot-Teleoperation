@@ -240,6 +240,15 @@ def parse_args():
         default=DEFAULT_ACTUATOR_BOOST,
         help="Interactive arm actuator gain scale; lower values reduce lurching but feel softer",
     )
+    parser.add_argument(
+        "--max-trial-duration",
+        type=float,
+        default=None,
+        help=(
+            "Optional wall-clock trial time limit in seconds. When reached, the viewer "
+            "closes automatically. Omit for no limit."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -284,5 +293,6 @@ if __name__ == "__main__":
         teleop_speed=args.teleop_speed,
         hold_teleop=args.hold_teleop,
         actuator_boost=args.actuator_boost,
+        max_trial_duration_s=args.max_trial_duration,
     )
     env.run()

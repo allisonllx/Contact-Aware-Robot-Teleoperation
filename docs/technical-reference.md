@@ -203,33 +203,40 @@ python3 experiment.py --tester pilot --dry-run
 mjpython experiment.py --tester tester_01
 ```
 
-By default, the runner uses `peg_in_hole` with `--interactive --occluded-task --randomize-occluded-hole`, assigns or reuses a counterbalanced condition order, and runs `no_feedback`, `visual_feedback`, `audio_feedback`, and `both_feedback`. Each condition has two saved practice trials and one recorded trial. Practice data is saved but excluded from the main experiment summary. Experiment trials use a frosted occluder with `--occluder-alpha 0.8`, a 5 mm keyboard nudge step, hold-to-move disabled, and a softer interactive actuator boost to reduce lurching.
+By default, the runner uses `peg_in_hole` with `--interactive --occluded-task --randomize-occluded-hole`, assigns or reuses a counterbalanced condition order, and runs `no_feedback`, `visual_feedback`, `audio_feedback`, and `both_feedback`. The session starts with one no-feedback familiarization trial, then runs three recorded trials per condition. Familiarization and optional practice data are saved but excluded from the main experiment summary. Each trial has a 120-second wall-clock time limit (`--max-trial-duration`); on success or timeout the MuJoCo window closes automatically and the runner advances. Experiment trials use a frosted occluder with `--occluder-alpha 0.8`, a 5 mm keyboard nudge step, hold-to-move disabled, and a softer interactive actuator boost to reduce lurching.
 
 Each trial is launched as a fresh `main.py` subprocess so the MuJoCo viewer is not reopened repeatedly inside one long-running Python process. On macOS, the runner uses `mjpython` for trial subprocesses when it is available on PATH; otherwise it falls back to the current Python executable. Use `--trial-python mjpython` if your shell needs the launcher to be explicit.
 
-The runner can resume an interrupted tester session. It reuses `experiment_plan.json`, prints progress for that tester, and skips only trials whose `trial_metadata.json` has `status=completed` and telemetry exists. If a trial was interrupted, failed, or left with partial telemetry, rerunning the same tester command starts again from that incomplete trial. Use `--rerun-existing` only when you intentionally want to redo completed trials.
+The runner can resume an interrupted tester session. It reuses `experiment_plan.json`, prints progress for that tester, and skips only trials whose `trial_metadata.json` has `status=completed` and telemetry exists. If a trial was interrupted, failed, or left with partial telemetry, rerunning the same tester command starts again from that incomplete trial. Use `--rerun-existing` only when you intentionally want to redo completed trials. When every planned trial is complete, the runner zips `experiment_results/<tester>/` to `experiment_results/<tester>.zip` and prints that path.
 
 Outputs are written under `experiment_results/<tester>/` instead of `results/`:
 
 ```text
 experiment_results/<tester>/experiment_plan.json
-experiment_results/<tester>/<condition>/practice_01/
-experiment_results/<tester>/<condition>/practice_02/
+experiment_results/<tester>/familiarization/familiarization_01/
 experiment_results/<tester>/<condition>/recorded_01/
+experiment_results/<tester>/<condition>/recorded_02/
+experiment_results/<tester>/<condition>/recorded_03/
 experiment_results/<tester>/experiment_analysis_summary.csv
+experiment_results/<tester>/familiarization_analysis_summary.csv
 experiment_results/<tester>/practice_analysis_summary.csv
+experiment_results/<tester>.zip
 ```
 
 Useful options:
 
 ```bash
-mjpython experiment.py --tester pilot --conditions no_feedback --practice-trials 0 --recorded-trials 1
-python3 experiment.py --tester tester_01 --order no_feedback visual_feedback audio_feedback both_feedback --dry-run
-mjpython experiment.py --tester tester_01 --base-seed 123 --record-video
-mjpython experiment.py --tester tester_01 --occluder-alpha 0.85 --occluder-style frosted
-mjpython experiment.py --tester tester_01 --teleop-nudge-step 0.003
-mjpython experiment.py --tester tester_01 --actuator-boost 3.0
-mjpython experiment.py --tester tester_01 --trial-python mjpython
+python3 experiment.py --tester pilot --dry-run
+python3 experiment.py --tester jane_doe --familiarization-trials 1 --recorded-trials 3
+python3 experiment.py --tester jane_doe --max-trial-duration 120
+python3 experiment.py --tester jane_doe --max-trial-duration 0
+mjpython experiment.py --tester pilot --conditions no_feedback --familiarization-trials 0 --recorded-trials 1
+python3 experiment.py --tester jane_doe --order no_feedback visual_feedback audio_feedback both_feedback --dry-run
+mjpython experiment.py --tester jane_doe --base-seed 123 --record-video
+mjpython experiment.py --tester jane_doe --occluder-alpha 0.85 --occluder-style frosted
+mjpython experiment.py --tester jane_doe --teleop-nudge-step 0.003
+mjpython experiment.py --tester jane_doe --actuator-boost 3.0
+mjpython experiment.py --tester jane_doe --trial-python mjpython
 ```
 
 Show CLI options:
@@ -274,6 +281,10 @@ Avoid `I`, `J`, `K`, and `U` in the MuJoCo viewer because they toggle debug visu
 | `--record-video` | All scenarios | Save `run_recording.mp4` under `results/<scenario>/`. |
 | `--record-force-feedback` | Video recording | Include force-feedback overlay geoms in the MP4. |
 | `--results-dir` | All runs | Override where CSVs, plots, and optional video are saved. Used by `experiment.py` trial subprocesses. |
+| `--max-trial-duration` | Interactive / experiment trials | Wall-clock seconds before a trial auto-closes. Experiment default is `120`; use `0` on `experiment.py` to disable. |
+| `--familiarization-trials` | `experiment.py` | One-time no-feedback warm-up trials before the measured conditions. Default is `1`. |
+| `--recorded-trials` | `experiment.py` | Measured trials per condition. Default is `3`. |
+| `--practice-trials` | `experiment.py` | Optional per-condition practice trials excluded from the main summary. Default is `0`. |
 | `--hole-clearance-mm` | `peg_in_hole` | Set total peg/hole clearance in millimeters. |
 | `--peg-alpha`, `--socket-alpha` | `peg_in_hole` | Adjust peg and socket opacity for inspection. |
 | `--occluded-task` | `peg_in_hole` with `--interactive` | Hide the socket behind a visual wall for occlusion experiments. |

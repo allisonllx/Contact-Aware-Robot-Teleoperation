@@ -15,9 +15,12 @@ The study compares four guidance modes:
 | Audio feedback | A contact click and Geiger-like ticks that change with lateral force |
 | Visual + audio | Both forms of guidance |
 
-The order of these modes is automatically counterbalanced. By default, each
-mode has two practice trials followed by one measured trial, for 12 trials in
-total. Practice data is saved separately from the main experiment summary.
+The order of these modes is automatically counterbalanced. By default, the
+session starts with one no-feedback familiarization trial, then runs three
+measured trials for each of the four modes (13 trials total). Familiarization
+data is saved separately from the main experiment summary. Each trial has a
+2-minute time limit; if the peg is not inserted in time, the window closes and
+the study moves on.
 
 ## Before starting
 
@@ -50,9 +53,13 @@ For every trial:
 2. Press Enter only when the tester is ready.
 3. When the MuJoCo viewer opens, click inside it so it receives keyboard input.
 4. Move the peg to search for the hidden hole and insert it.
-5. The task succeeds after the peg maintains contact with the pad at the bottom
-   of the hole. A success message appears and the trial exits cleanly.
+5. The trial ends when the peg maintains contact with the pad at the bottom of
+   the hole, or when the 2-minute time limit is reached. The MuJoCo window
+   closes automatically in either case.
 6. Return to the terminal and repeat when prompted for the next trial.
+
+The first trial is a familiarization run with no force guidance, so you can
+learn the controls before the measured conditions begin.
 
 Move carefully near contact. The task records contact forces as well as
 completion and timing information.
@@ -108,8 +115,14 @@ Study files are stored under `experiment_results/<tester_id>/`, where
 `experiment_results/jane_doe/`). They include the condition plan, trial
 metadata, force telemetry, plots, and summary CSV files.
 
-When you finish, send that whole `experiment_results/<tester_id>/` folder back
-to the study organizer.
+When the full session finishes, the runner creates a zip file next to that
+folder and prints its path, for example:
+
+```text
+experiment_results/jane_doe.zip
+```
+
+Send that zip file back to the study organizer.
 
 If a session is interrupted, rerun the same experiment command with the same
 `--tester` ID. It resumes from the first incomplete trial.

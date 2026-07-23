@@ -1,4 +1,6 @@
 import csv
+import json
+import time
 from pathlib import Path
 
 import mujoco
@@ -78,6 +80,7 @@ class FrankaForceEnv:
         teleop_nudge_step=DEFAULT_TELEOP_NUDGE_STEP,
         hold_teleop=DEFAULT_HOLD_TELEOP,
         actuator_boost=DEFAULT_ACTUATOR_BOOST,
+        max_trial_duration_s=None,
         results_dir=None,
     ):
         if scenario not in SCENARIOS:
@@ -127,6 +130,7 @@ class FrankaForceEnv:
         self.teleop_nudge_step = teleop_nudge_step
         self.hold_teleop = hold_teleop
         self.actuator_boost = actuator_boost
+        self.max_trial_duration_s = max_trial_duration_s
 
         if force_feedback and not interactive:
             raise ValueError("force_feedback requires interactive=True")
@@ -176,6 +180,8 @@ class FrankaForceEnv:
             raise ValueError("teleop_nudge_step must be positive")
         if actuator_boost <= 0.0:
             raise ValueError("actuator_boost must be positive")
+        if max_trial_duration_s is not None and max_trial_duration_s <= 0.0:
+            raise ValueError("max_trial_duration_s must be positive")
 
         if self.randomize_occluded_hole:
             rng = np.random.default_rng(self.occluded_hole_seed)
@@ -233,6 +239,8 @@ class FrankaForceEnv:
         self.task_success = False
         self.success_contact = False
         self.success_hold_time = 0.0
+        self.task_timed_out = False
+        self.wall_time_elapsed_s = 0.0
         self.latest_f_est = 0.0
         self.latest_f_true = 0.0
         self.latest_in_contact = False
@@ -521,7 +529,21 @@ class FrankaForceEnv:
                 show_right_ui=False,
             ) as viewer:
                 self.scenario_impl.configure_viewer_camera(self, viewer.cam)
+                trial_started_at = time.monotonic()
                 while viewer.is_running():
+                    self.wall_time_elapsed_s = time.monotonic() - trial_started_at
+                    if (
+                        self.max_trial_duration_s is not None
+                        and self.wall_time_elapsed_s >= self.max_trial_duration_s
+                        and not self.task_stop_requested
+                    ):
+                        self.task_timed_out = True
+                        self.task_stop_requested = True
+                        print(
+                            f"Trial time limit reached ({self.max_trial_duration_s:.0f}s). "
+                            "Closing the MuJoCo window and moving on."
+                        )
+
                     if interactive:
                         self.scenario_impl.before_interactive_step(self, self.model.opt.timestep)
 
@@ -599,6 +621,8 @@ class FrankaForceEnv:
 
     def run(self):
         print(f"Booting up environment factory running: [{self.scenario.upper()}]")
+        if self.max_trial_duration_s is not None:
+            print(f"Trial time limit: {self.max_trial_duration_s:.0f}s (wall clock).")
 
         if self.interactive:
             self._run_interactive_viewer()
@@ -608,7 +632,22 @@ class FrankaForceEnv:
             self._run_standard_viewer()
 
         self.log_file.close()
+        self._write_trial_outcome()
         self.plot_comparison()
+
+    def _write_trial_outcome(self):
+        outcome = {
+            "task_success": bool(self.task_success),
+            "timed_out": bool(self.task_timed_out),
+            "wall_time_elapsed_s": float(self.wall_time_elapsed_s),
+            "sim_time_s": float(self.data.time),
+            "success_hold_time": float(self.success_hold_time),
+            "max_trial_duration_s": self.max_trial_duration_s,
+        }
+        path = self.results_dir / "trial_outcome.json"
+        with path.open("w") as f:
+            json.dump(outcome, f, indent=2, sort_keys=True)
+            f.write("\n")
 
     def plot_comparison(self):
         plot_force_comparison(self)
