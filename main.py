@@ -9,6 +9,7 @@ from franka_force.config import (
     DEFAULT_AUDIO_LATERAL_THRESHOLD,
     DEFAULT_AUDIO_VOLUME,
     DEFAULT_CUSHION_THRESHOLD,
+    DEFAULT_HEADLESS_DURATION_S,
     DEFAULT_HOLE_CLEARANCE_MM,
     DEFAULT_HOLD_TELEOP,
     DEFAULT_IMPEDANCE_DP,
@@ -72,6 +73,23 @@ def parse_args():
         "--disable-policy",
         action="store_true",
         help="Disable scripted scenario motion in non-interactive runs",
+    )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help=(
+            "Run scripted scenarios without opening a MuJoCo window "
+            "(recommended for force-estimation batch repeats on macOS)."
+        ),
+    )
+    parser.add_argument(
+        "--headless-duration",
+        type=float,
+        default=DEFAULT_HEADLESS_DURATION_S,
+        help=(
+            f"Sim-time length in seconds for --headless runs "
+            f"(default: {DEFAULT_HEADLESS_DURATION_S:g})."
+        ),
     )
     parser.add_argument(
         "--free-orientation",
@@ -294,5 +312,7 @@ if __name__ == "__main__":
         hold_teleop=args.hold_teleop,
         actuator_boost=args.actuator_boost,
         max_trial_duration_s=args.max_trial_duration,
+        headless=args.headless,
+        headless_duration_s=args.headless_duration,
     )
     env.run()

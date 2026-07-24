@@ -208,6 +208,77 @@ python3 analysis.py --source raw --include-anomalies
 python3 analysis.py --force-threshold 50 --jamming-threshold 50
 ```
 
+#### 7b. Force-estimation multi-run report
+
+Use this path when you need mean ± std MAE/MSE across repeated verification runs
+(report tables and bar/box plots). Keep it separate from
+`condition_comparison_summary.csv`, which is about feedback conditions and task
+performance.
+
+**Folder layout** (scripted repeats):
+
+```text
+force_estimation_runs/
+  hit_floor/run_01/   # force_verification_log*.csv + force_comparison_*.png
+  hit_floor/run_02/
+  push_block/run_01/
+  peg_in_hole/run_01/
+  force_estimation_per_run.csv          # written by the report
+  force_estimation_by_scenario.csv
+  plots/mae_by_scenario.png
+  plots/mse_by_scenario.png
+  plots/mae_box_by_scenario.png
+  plots/mse_box_by_scenario.png
+  plots/exemplar_overlays.txt           # paths to per-run GT vs estimate PNGs
+```
+
+Collect N scripted repeats without overwriting `results/<scenario>/`. The helper
+uses `--headless` so MuJoCo does not open a viewer window (needed for reliable
+batch runs on macOS / in Cursor’s terminal):
+
+```bash
+./scripts/run_force_estimation_repeats.sh 5
+# or a subset:
+./scripts/run_force_estimation_repeats.sh 3 hit_floor push_block
+# equivalent one-off:
+python3 main.py --scenario hit_floor --results-dir force_estimation_runs/hit_floor/run_01 \
+  --headless --headless-duration 10
+```
+
+If a previous batch left empty header-only CSVs, re-run the script; it overwrites
+each `run_XX/` folder. Optional: `HEADLESS_DURATION=12 ./scripts/run_force_estimation_repeats.sh 5`.
+
+`hit_floor` and `push_block` must come from these scripted `main.py` runs. Tester
+zips under `experiment_results/` only contain occluded `peg_in_hole` teleop
+trials; they cannot supply the side-task metrics.
+
+Build the aggregated report:
+
+```bash
+python3 analysis.py --force-estimation-report
+```
+
+That discovers every `force_estimation_runs/<scenario>/run_XX/` folder, reuses
+the same contact-only error metrics as a normal `analysis.py` pass (`mae_contact_n`,
+`mse_contact_n2`, `rmse_contact_n`, `bias_contact_n`), and by default also ingests
+every trial log under `experiment_results/**` as `scenario=peg_in_hole`,
+`source=tester`. Scripted peg repeats stay `source=scripted`, so the by-scenario
+table splits teleop vs scripted peg pools. Disable the tester pool with
+`--no-include-tester-pool`.
+
+Useful options:
+
+```bash
+python3 analysis.py --force-estimation-report --force-estimation-root force_estimation_runs
+python3 analysis.py --force-estimation-report --no-include-tester-pool
+python3 analysis.py --force-estimation-report --experiment-results-dir experiment_results
+```
+
+For the write-up, use `force_estimation_by_scenario.csv` for mean MAE/MSE/RMSE
+over N repeats, the bar charts under `plots/`, and the per-run
+`force_comparison_*.png` paths listed in `plots/exemplar_overlays.txt` as example
+GT-vs-estimate overlays.
+
 #### 8. Experiment runner
 
 Use the experiment runner for structured occluded peg-in-hole user-study data collection:
@@ -330,6 +401,9 @@ Each run writes artifacts under `results/<scenario>/`:
 
 Running `python3 analysis.py` writes `results/force_analysis_summary.csv`, a cross-scenario summary of estimation error and task/safety metrics.
 
+Running `python3 analysis.py --force-estimation-report` writes multi-run MAE/MSE
+tables and plots under `force_estimation_runs/` (see section 7b).
+
 Running `experiment.py` writes participant-level artifacts under `experiment_results/<tester>/`, including per-trial CSVs/plots, `trial_metadata.json`, `experiment_plan.json`, and experiment-level summaries.
 
 Reference outputs are checked in under `sample_results/`.
@@ -340,6 +414,8 @@ Reference outputs are checked in under `sample_results/`.
 analysis.py                     Cross-scenario force estimation analysis
 experiment.py                   Occluded peg-in-hole study runner
 main.py                         CLI entrypoint
+scripts/run_force_estimation_repeats.sh
+                                Collect N scripted force-estimation repeats
 franka_force/config.py          Paths, scenario names, video defaults
 franka_force/env.py             Shared MuJoCo environment and viewer orchestration
 franka_force/teleop.py          Shared keyboard teleoperation and IK target helpers

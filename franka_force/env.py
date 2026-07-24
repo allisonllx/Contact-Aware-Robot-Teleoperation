@@ -16,6 +16,7 @@ from .config import (
     DEFAULT_AUDIO_LATERAL_THRESHOLD,
     DEFAULT_AUDIO_VOLUME,
     DEFAULT_CUSHION_THRESHOLD,
+    DEFAULT_HEADLESS_DURATION_S,
     DEFAULT_HOLE_CLEARANCE_MM,
     DEFAULT_HOLD_TELEOP,
     DEFAULT_IMPEDANCE_DP,
@@ -81,6 +82,8 @@ class FrankaForceEnv:
         hold_teleop=DEFAULT_HOLD_TELEOP,
         actuator_boost=DEFAULT_ACTUATOR_BOOST,
         max_trial_duration_s=None,
+        headless=False,
+        headless_duration_s=None,
         results_dir=None,
     ):
         if scenario not in SCENARIOS:
@@ -131,6 +134,11 @@ class FrankaForceEnv:
         self.hold_teleop = hold_teleop
         self.actuator_boost = actuator_boost
         self.max_trial_duration_s = max_trial_duration_s
+        self.headless = headless
+        if headless_duration_s is None:
+            self.headless_duration_s = DEFAULT_HEADLESS_DURATION_S
+        else:
+            self.headless_duration_s = headless_duration_s
 
         if force_feedback and not interactive:
             raise ValueError("force_feedback requires interactive=True")
@@ -140,6 +148,10 @@ class FrankaForceEnv:
             raise ValueError("free_orientation is for side tasks; peg_in_hole keeps the peg facing down")
         if record_force_feedback and not record_video:
             raise ValueError("record_force_feedback requires record_video=True")
+        if headless and interactive:
+            raise ValueError("headless mode cannot be combined with interactive=True")
+        if headless and record_video:
+            raise ValueError("headless mode cannot be combined with record_video=True")
         if occluded_task and (scenario != "peg_in_hole" or not interactive):
             raise ValueError("occluded_task requires scenario='peg_in_hole' and interactive=True")
         if randomize_occluded_hole and not occluded_task:
@@ -182,6 +194,8 @@ class FrankaForceEnv:
             raise ValueError("actuator_boost must be positive")
         if max_trial_duration_s is not None and max_trial_duration_s <= 0.0:
             raise ValueError("max_trial_duration_s must be positive")
+        if self.headless_duration_s <= 0.0:
+            raise ValueError("headless_duration_s must be positive")
 
         if self.randomize_occluded_hole:
             rng = np.random.default_rng(self.occluded_hole_seed)
@@ -629,8 +643,26 @@ class FrankaForceEnv:
                 "MuJoCo viewer failed to start. Try: (1) close any stuck "
                 "simulator windows, (2) run from Terminal.app instead of an "
                 "embedded shell, (3) run `pkill -f 'python.*main.py'`, then "
-                "retry."
+                "retry. For batch verification use --headless."
             ) from exc
+        finally:
+            mujoco.set_mjcb_passive(None)
+            mujoco.set_mjcb_control(None)
+
+    def _run_headless(self):
+        """Step scripted scenarios without opening a MuJoCo window."""
+        duration_s = self.headless_duration_s
+        print(f"Headless run for {duration_s:.1f}s sim time (no viewer).")
+        mujoco.set_mjcb_control(self._apply_control_policy_callback)
+        mujoco.set_mjcb_passive(self._passive_callback)
+        trial_started_at = time.monotonic()
+        try:
+            while self.data.time < duration_s and not self.task_stop_requested:
+                mujoco.mj_step(self.model, self.data)
+                self.scenario_impl.after_step(self, self.model.opt.timestep)
+                self.wall_time_elapsed_s = time.monotonic() - trial_started_at
+            if self.data.time >= duration_s and not self.task_stop_requested:
+                self.task_timed_out = True
         finally:
             mujoco.set_mjcb_passive(None)
             mujoco.set_mjcb_control(None)
@@ -643,7 +675,9 @@ class FrankaForceEnv:
         if self.max_trial_duration_s is not None:
             print(f"Trial time limit: {self.max_trial_duration_s:.0f}s (wall clock).")
 
-        if self.interactive:
+        if self.headless:
+            self._run_headless()
+        elif self.interactive:
             self._run_interactive_viewer()
         elif self.record_video:
             self._run_passive_viewer(interactive=False)
