@@ -2,6 +2,7 @@ import math
 import shutil
 import subprocess
 import tempfile
+import time
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,6 +74,18 @@ class AudioFeedback:
         if self._tmpdir is not None:
             self._tmpdir.cleanup()
             self._tmpdir = None
+
+    def play_calibration_preview(self):
+        """Play the contact cue followed by slow-to-fast lateral-force ticks."""
+        if self._contact_path is None or self._tick_path is None:
+            return False
+        self._play(self._contact_path)
+        for interval in (0.8, 0.4, 0.2):
+            time.sleep(interval)
+            self._play(self._tick_path)
+        # Let the final asynchronous tick finish before the caller closes us.
+        time.sleep(0.1)
+        return True
 
     def _update_contact_click(self, f_est):
         contact_event = False

@@ -20,8 +20,13 @@ from analysis import (
     print_condition_summary,
     write_condition_summary,
 )
+from franka_force.audio import AudioFeedback
 from franka_force.config import (
     DEFAULT_ACTUATOR_BOOST,
+    DEFAULT_AUDIO_CONTACT_THRESHOLD,
+    DEFAULT_AUDIO_LATERAL_MAX,
+    DEFAULT_AUDIO_LATERAL_THRESHOLD,
+    DEFAULT_AUDIO_VOLUME,
     DEFAULT_FORCE_THRESHOLD_N,
     DEFAULT_HOLE_CLEARANCE_MM,
     DEFAULT_HOLD_TELEOP,
@@ -271,6 +276,7 @@ def main():
         return
 
     confirm_tester_briefing()
+    run_audio_calibration()
 
     interrupted = False
     try:
@@ -668,6 +674,7 @@ def confirm_tester_briefing():
     print("  - Visual feedback : force arrow and contact ring")
     print("  - Audio feedback  : contact click and force-sensitive ticking")
     print("  - Visual + audio  : both forms of guidance")
+    print("Turn on the computer volume or wear earphones for the audio cues.")
     print()
     print("The six main control keys (one press moves 5 mm):")
     print("  - Up arrow        : move north")
@@ -687,6 +694,25 @@ def confirm_tester_briefing():
             print("Acknowledged. The experiment will now begin.")
             return
         print("Acknowledgement not received. Read the tester guide, then type YES.")
+
+
+def run_audio_calibration():
+    """Preview the standard audio cues before the non-recorded familiarization."""
+    print("\nAudio calibration: listen for one contact click, then ticks that speed up.")
+    print("Faster ticks mean higher lateral force; back off and readjust when they are fast.")
+    audio = AudioFeedback(
+        mode="both",
+        contact_threshold=DEFAULT_AUDIO_CONTACT_THRESHOLD,
+        lateral_threshold=DEFAULT_AUDIO_LATERAL_THRESHOLD,
+        lateral_max=DEFAULT_AUDIO_LATERAL_MAX,
+        volume=DEFAULT_AUDIO_VOLUME,
+    )
+    try:
+        if not audio.play_calibration_preview():
+            print("Audio preview unavailable; check that system audio is configured.")
+    finally:
+        audio.close()
+    print("Audio calibration complete. The familiarization trial is not recorded in the main results.")
 
 
 def bold_terminal_text(text):
