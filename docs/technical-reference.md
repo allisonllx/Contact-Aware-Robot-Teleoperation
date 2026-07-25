@@ -200,6 +200,37 @@ above threshold, jamming episode count (lateral force above
 metrics (action jerk, velocity reversals, retractions) when target XYZ is
 logged.
 
+For participant-level inference across every active tester, run:
+
+```bash
+python3 cross_tester_analysis.py
+```
+
+This separate workflow treats participants—not individual trials—as the
+independent observations. It validates the four-condition, three-recorded-trial
+design; rejects missing, duplicate, incomplete, or threshold-inconsistent data;
+and ignores the top-level `experiment_results/archive/` directory. The primary
+outcome is each participant's median `peak_ground_truth_contact_n` in each
+condition. The report uses a reproducible Monte Carlo permutation Friedman test
+and Kendall's W. A significant omnibus result triggers only the three
+pre-specified feedback-versus-no-feedback Wilcoxon sign-flip tests, with Holm
+correction, rank-biserial effects, participant bootstrap intervals, and exact
+sign-test sensitivity values.
+
+Outputs default to `experiment_results/cross_tester_analysis/` and include the
+Markdown report, validation tables, participant-condition aggregates, primary
+and exploratory summaries, connected-dot plots, counterbalance diagnostics,
+and completion-time survival inputs/plots. Failed or timed-out trials are
+represented as censored completion observations and are excluded from the
+"successful completion time" median.
+
+Useful reproducibility options:
+
+```bash
+python3 cross_tester_analysis.py --permutations 100000 --bootstrap-resamples 10000 --seed 20260725
+python3 cross_tester_analysis.py --output-dir results/cross_tester_analysis
+```
+
 Useful options:
 
 ```bash
@@ -411,7 +442,15 @@ Reference outputs are checked in under `sample_results/`.
 ## Project Layout
 
 ```text
-analysis.py                     Cross-scenario force estimation analysis
+analysis.py                     Compatibility entrypoint for statistical analysis
+cross_tester_analysis.py        Compatibility entrypoint for cross-tester analysis
+stat_analysis/                  Statistical analysis implementation package
+stat_analysis/telemetry.py      Per-run telemetry analysis
+stat_analysis/metrics.py        Force, error, and smoothness metrics
+stat_analysis/summaries.py      Per-tester and condition summaries
+stat_analysis/force_estimation.py
+                                Multi-run force-estimation reports and plots
+stat_analysis/cross_tester/     Validation, statistics, reports, and workflow
 experiment.py                   Occluded peg-in-hole study runner
 main.py                         CLI entrypoint
 scripts/run_force_estimation_repeats.sh

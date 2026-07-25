@@ -46,3 +46,20 @@ trials. When every trial is finished, it writes
 `experiment_results/<tester_id>.zip` and prints the path so you can send the
 results back. On macOS, the runner automatically uses `mjpython` for the
 interactive MuJoCo trial processes when it is available.
+
+## Analyze conditions across testers
+
+After all active tester sessions are complete, run:
+
+```bash
+python cross_tester_analysis.py
+```
+
+The command validates every planned recorded trial before inference, excludes
+`experiment_results/archive/`, aggregates the three trials into one median per
+participant and condition, and writes the statistical report, CSV tables, and
+plots to `experiment_results/cross_tester_analysis/`. The confirmatory analysis
+uses peak ground-truth contact force, a permutation Friedman test, and—only
+after a significant omnibus result—three Holm-corrected feedback-versus-control
+Wilcoxon comparisons. Completion failures remain censored rather than being
+treated as successful 150-second completions.

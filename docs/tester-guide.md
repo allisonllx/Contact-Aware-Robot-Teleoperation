@@ -6,11 +6,25 @@ You will control a simulated Franka robot arm holding a peg. Your goal is to
 place the peg into a hole hidden behind a frosted wall. The hidden hole can move
 between trials, so its location should not be assumed from an earlier trial.
 
+## TL;DR
+
+- **Primary aim: keep contact forces low.** Speed is secondary to a gentle
+  insertion.
+- Click inside the MuJoCo window, then use `↑` for front, `↓` for back, `←` for
+  left, `→` for right, `8` for down, and `9` for up.
+- Every key press moves exactly one 5 mm step. A short press and a long press
+  do the same thing, so keep pressing the key to move multiple steps.
+- Search and insert gently: avoid forcing the peg when it jams.
+- To finish before the 150 s limit, lower the peg until it reaches and maintains
+  contact with the pad at the **bottom of the hole**.
+- Turn on the computer volume or wear earphones so you can hear the audio
+  calibration and audio-feedback cues.
+
 ### What to aim for
 
-1. **Primary:** Keep contact forces low. If the peg does not line up with the
-   hole, do not keep pushing into a jam against hard surfaces — back off, adjust,
-   and try again gently.
+1. **Primary:** Keep contact forces low. Even if the peg appears aligned with
+   the hole, do not force it downward when the visual or audio feedback shows
+   high contact force. Back off, adjust, and try again gently.
 2. **Secondary:** Complete the insertion as quickly as you can, without
    sacrificing gentle contact.
 
@@ -67,11 +81,30 @@ the same ID and command resumes an interrupted session and skips completed
 trials. This command is the same on macOS, Linux, and Windows; the runner
 handles the macOS `mjpython` requirement automatically.
 
+At startup, the terminal displays a short briefing covering the task aims, all
+four feedback modes, and the six main movement keys. If anything is unclear,
+stop and read this guide or ask the study organizer. Type `YES` only after you
+understand the instructions. Immediately afterwards, a short non-recorded
+audio calibration plays: one contact click, then ticks that speed from slow to
+fast. Faster ticks mean higher lateral force, so back off and readjust when
+they become fast. The preview plays for every tester, even if their first
+measured condition has no audio feedback.
+
 ## Trial workflow
 
-For every trial:
+At the beginning of the session:
 
-1. Read the next condition and trial type shown in the terminal.
+1. Read the summary shown in the terminal.
+2. If you are unsure about the task, feedback, or controls, read this guide and
+   ask the study organizer any questions.
+3. Type `YES` to acknowledge that you understand the instructions.
+4. Listen to the short audio calibration: one contact click, then slow-to-fast
+   ticks. It is a standardized preview and is not recorded as a trial.
+
+Then, for every trial:
+
+1. Read the bold **Next trial** line, which shows the upcoming condition and
+   trial type.
 2. Press Enter only when the tester is ready.
 3. When the MuJoCo viewer opens, click inside it so it receives keyboard input.
    Keep the default camera angle; use the top-left key guide if you need a
@@ -92,8 +125,9 @@ completion and timing information.
 ## Controls
 
 For the study itself, you mainly need the arrow keys and `8` / `9`. Each press
-moves the target by 5 mm. Hold-to-move is disabled in the standard experiment,
-so repeated movement requires repeated key presses.
+moves the target by 5 mm, whether the key is pressed briefly or held longer.
+Hold-to-move is disabled in the standard experiment, so repeated movement
+requires repeated key presses.
 
 | Key | Action |
 | --- | --- |
@@ -123,7 +157,10 @@ The keys below are optional and listed only for reference:
 ## Understanding the feedback
 
 - The green visual marker means the visual system is waiting for contact.
-- The red/orange arrow indicates contact-force direction and magnitude.
+- The red/orange arrow shows contact-force direction and magnitude. Its
+  direction can be misleading because the forces are sensitive, so focus on its
+  size: a large arrow/ring is a sign to reduce contact force by backing off and
+  readjusting.
 - The red/orange ring marks the strongest contact surface.
 - An audio click indicates contact above the configured threshold.
 - Geiger-like ticks begin with sufficient lateral force and become faster as
