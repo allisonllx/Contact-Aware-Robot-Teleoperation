@@ -270,6 +270,8 @@ def main():
         print("\nDry run only; no MuJoCo windows launched.")
         return
 
+    confirm_tester_briefing()
+
     interrupted = False
     try:
         for trial in trial_specs:
@@ -632,10 +634,12 @@ def trial_status_for_display(state):
 def wait_for_trial(trial, args):
     print("\n" + "-" * 72)
     if trial["trial_type"] == "familiarization":
-        print(f"Next trial: familiarization / {trial['trial_name']} (no feedback)")
+        next_trial = f"Next trial: familiarization / {trial['trial_name']} (no feedback)"
+        print(bold_terminal_text(next_trial))
         print("This is a one-time practice run to learn the controls.")
     else:
-        print(f"Next trial: {trial['condition']} / {trial['trial_name']}")
+        next_trial = f"Next trial: {trial['condition']} / {trial['trial_name']}"
+        print(bold_terminal_text(next_trial))
     print(f"Output: {trial['trial_dir']}")
     print(f"Feedback: {condition_flags_for_display(trial)}")
     if args.max_trial_duration > 0.0:
@@ -647,6 +651,48 @@ def wait_for_trial(trial, args):
         print("No time limit. The MuJoCo window closes automatically on success.")
     print("Press Enter when the tester is ready.")
     input()
+
+
+def confirm_tester_briefing():
+    print("\n" + "=" * 72)
+    print("TESTER BRIEFING")
+    print("=" * 72)
+    print("Task: Find the hidden hole and insert the peg using gentle contact.")
+    print()
+    print("Aims:")
+    print("  1. Keep contact forces low. If the peg jams, back off and adjust.")
+    print("  2. Complete the insertion quickly without sacrificing gentle contact.")
+    print()
+    print("The four feedback modes:")
+    print("  - No feedback     : no visual or audio force guidance")
+    print("  - Visual feedback : force arrow and contact ring")
+    print("  - Audio feedback  : contact click and force-sensitive ticking")
+    print("  - Visual + audio  : both forms of guidance")
+    print()
+    print("The six main control keys (one press moves 5 mm):")
+    print("  - Up arrow        : move north")
+    print("  - Down arrow      : move south")
+    print("  - Left arrow      : move west")
+    print("  - Right arrow     : move east")
+    print("  - 9               : raise the peg")
+    print("  - 8               : lower the peg")
+    print()
+    print("Keep the default front-on camera view; do not move behind the wall.")
+    print("If anything above is unclear, read docs/tester-guide.md before continuing.")
+    print("Ask the study organizer any questions before acknowledging.")
+
+    while True:
+        acknowledgement = input("\nType YES to confirm that you understand the task: ").strip()
+        if acknowledgement.casefold() == "yes":
+            print("Acknowledged. The experiment will now begin.")
+            return
+        print("Acknowledgement not received. Read the tester guide, then type YES.")
+
+
+def bold_terminal_text(text):
+    if hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
+        return f"\033[1m{text}\033[0m"
+    return text
 
 
 def run_trial(args, plan, trial):
