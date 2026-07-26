@@ -24,4 +24,4 @@ jobs:
         pip install --only-binary=mujoco -r requirements.txt
     - name: Analysing the code with pylint
       run: |
-        pylint analysis.py cross_tester_analysis.py experiment.py main.py franka_force stat_analysis
+        pylint analysis.py cross_tester_analysis.py experiment.py main.py franka_force stat_analysis experiment_runner

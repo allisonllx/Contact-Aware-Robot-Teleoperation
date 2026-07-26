@@ -42,7 +42,9 @@ class AudioCalibrationTests(unittest.TestCase):
     def test_experiment_calibration_uses_trial_audio_settings_without_recording_data(self):
         preview = Mock(return_value=True)
         controller = Mock(play_calibration_preview=preview)
-        with patch("experiment.AudioFeedback", return_value=controller) as audio_class, contextlib.redirect_stdout(io.StringIO()) as output:
+        with patch(
+            "experiment_runner.briefing.AudioFeedback", return_value=controller
+        ) as audio_class, contextlib.redirect_stdout(io.StringIO()) as output:
             experiment.run_audio_calibration()
 
         audio_class.assert_called_once_with(

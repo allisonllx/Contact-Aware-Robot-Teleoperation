@@ -335,6 +335,10 @@ python3 experiment.py --tester pilot --dry-run
 mjpython experiment.py --tester tester_01
 ```
 
+`experiment.py` remains the supported command and import-compatibility entry
+point. Its implementation is organized under `experiment_runner/` by briefing,
+trial planning, execution, and result-summary responsibilities.
+
 By default, the runner uses `peg_in_hole` with `--interactive --occluded-task --randomize-occluded-hole`, assigns or reuses a counterbalanced condition order, and runs `no_feedback`, `visual_feedback`, `audio_feedback`, and `both_feedback`. The session starts with one no-feedback familiarization trial, then runs three recorded trials per condition. Familiarization and optional practice data are saved but excluded from the main experiment summary. Each trial has a 150-second wall-clock time limit (`--max-trial-duration`); on success or timeout the MuJoCo window closes automatically and the runner advances. Video recording is on by default (`run_recording.mp4` in each trial folder); pass `--no-record-video` to disable it. Experiment trials use a frosted occluder with `--occluder-alpha 0.8`, a 5 mm keyboard nudge step, hold-to-move disabled, and a softer interactive actuator boost to reduce lurching.
 
 Each trial is launched as a fresh `main.py` subprocess so the MuJoCo viewer is not reopened repeatedly inside one long-running Python process. On macOS, the runner uses `mjpython` for trial subprocesses when it is available on PATH; otherwise it falls back to the current Python executable. Use `--trial-python mjpython` if your shell needs the launcher to be explicit.
