@@ -4,3 +4,8 @@ __pycache__/
 results/
 experiment_results/
 force_estimation_runs/
+
+MISSION.md
+RESOURCES.md
+cross-tester-statistics-explainer.html
+learning-records/

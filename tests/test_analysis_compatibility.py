@@ -13,6 +13,7 @@ import analysis
 import cross_tester_analysis
 import stat_analysis
 from stat_analysis.cross_tester import run_analysis as packaged_run_analysis
+from stat_analysis.force_estimation import write_force_estimation_report
 
 
 class AnalysisCompatibilityTests(unittest.TestCase):
@@ -103,6 +104,46 @@ class AnalysisCompatibilityTests(unittest.TestCase):
                 rows = list(csv.DictReader(f))
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["tester_id"], "tester_a")
+
+    def test_force_estimation_report_excludes_archived_tester_trials(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            results_dir = Path(tmp) / "experiment_results"
+            for tester, condition in (
+                ("active_tester", "visual_feedback"),
+                ("_archive/previous_tester", "audio_feedback"),
+            ):
+                trial_dir = results_dir / tester / condition / "recorded_01"
+                trial_dir.mkdir(parents=True)
+                for name in (
+                    "force_verification_log.csv",
+                    "force_verification_log_filtered.csv",
+                ):
+                    shutil.copy(
+                        Path("sample_results/peg_in_hole") / name,
+                        trial_dir / name,
+                    )
+                (trial_dir / "trial_metadata.json").write_text(json.dumps({
+                    "status": "completed",
+                }))
+
+            output_dir = Path(tmp) / "force_estimation_report"
+            with contextlib.redirect_stdout(io.StringIO()):
+                write_force_estimation_report(
+                    output_dir,
+                    experiment_results_dir=results_dir,
+                )
+
+            with (output_dir / "force_estimation_per_run.csv").open(newline="") as f:
+                rows = list(csv.DictReader(f))
+            self.assertEqual(len(rows), 1)
+            self.assertIn("active_tester", rows[0]["run_id"])
+            self.assertNotIn("_archive", rows[0]["run_id"])
+            self.assertTrue(
+                (output_dir / "plots" / "estimate_vs_ground_truth.png").is_file()
+            )
+            self.assertTrue(
+                (output_dir / "plots" / "estimate_vs_ground_truth_0_150n.png").is_file()
+            )
 
 
 if __name__ == "__main__":

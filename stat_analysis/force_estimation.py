@@ -1,4 +1,5 @@
 
+import csv
 import math
 import statistics
 from pathlib import Path
@@ -79,6 +80,12 @@ def write_force_estimation_report(
 
     plots_dir = root / "plots"
     plot_force_estimation_bars(by_scenario_rows, per_run_rows, plots_dir)
+    plot_force_calibration(
+        discovered,
+        source=source,
+        include_anomalies=include_anomalies,
+        plots_dir=plots_dir,
+    )
     write_force_estimation_exemplars(per_run_rows, plots_dir / "exemplar_overlays.txt")
 
     print_force_estimation_report(
@@ -150,6 +157,9 @@ def discover_tester_pool_runs(experiment_results_dir):
                 run_id = str(rel).replace("\\", "/")
             except ValueError:
                 run_id = run_dir.name
+                rel = Path(run_id)
+            if any(part.casefold() in {"archive", "_archive"} for part in rel.parts):
+                continue
             discovered.append(
                 {
                     "scenario": "peg_in_hole",
@@ -266,6 +276,138 @@ def plot_force_estimation_bars(by_scenario_rows, per_run_rows, plots_dir):
         title="Contact-force MSE distribution",
         path=plots_dir / "mse_box_by_scenario.png",
     )
+
+
+def plot_force_calibration(discovered, *, source, include_anomalies, plots_dir):
+    """Plot estimated versus ground-truth contact force, including 0--150 N."""
+    plots_dir = Path(plots_dir)
+    groups = collect_contact_force_pairs(
+        discovered,
+        source=source,
+        include_anomalies=include_anomalies,
+    )
+    if not groups:
+        return
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib not available; skipping force-calibration plots")
+        return
+
+    _save_force_calibration_plot(
+        plt,
+        groups,
+        path=plots_dir / "estimate_vs_ground_truth.png",
+        title="Contact-force estimate calibration",
+    )
+    _save_force_calibration_plot(
+        plt,
+        groups,
+        path=plots_dir / "estimate_vs_ground_truth_0_150n.png",
+        title="Contact-force estimate calibration (ground truth 0–150 N)",
+        limit=150.0,
+    )
+
+
+def collect_contact_force_pairs(discovered, *, source, include_anomalies):
+    """Return finite, clean contact (ground truth, estimate) samples by run group."""
+    groups = {}
+    for item in discovered:
+        log_path = select_log_path_from_dir(Path(item["run_dir"]), source)
+        if log_path is None:
+            continue
+        try:
+            with log_path.open(newline="") as f:
+                rows = csv.DictReader(f)
+                for row in rows:
+                    true_force = _finite_float(row.get("Ground Truth (N)"))
+                    estimate = _finite_float(row.get("Jacobian Estimate (N)"))
+                    if true_force is None or estimate is None:
+                        continue
+                    if not _row_is_contact(row, true_force):
+                        continue
+                    if not include_anomalies and _row_is_anomaly(row):
+                        continue
+                    key = (item["scenario"], item["source"])
+                    groups.setdefault(key, []).append((true_force, estimate))
+        except OSError:
+            continue
+    return groups
+
+
+def _save_force_calibration_plot(plt, groups, *, path, title, limit=None):
+    fig, ax = plt.subplots(figsize=(6.5, 5.5))
+    max_value = 0.0
+    for (scenario, source), pairs in sorted(groups.items()):
+        if limit is not None:
+            pairs = [pair for pair in pairs if pair[0] <= limit]
+        if not pairs:
+            continue
+        ground_truth, estimates = zip(*pairs)
+        label = f"{scenario} ({source}), n={len(pairs)}"
+        ax.scatter(ground_truth, estimates, s=8, alpha=0.18, label=label)
+        slope, intercept = _linear_fit(ground_truth, estimates)
+        line_end = limit or max(max(ground_truth), max(estimates))
+        ax.plot(
+            (0.0, line_end),
+            (intercept, slope * line_end + intercept),
+            linewidth=2,
+            label=f"fit: est = {slope:.2f} × GT + {intercept:.1f}",
+        )
+        max_value = max(max_value, max(ground_truth), max(estimates))
+    if max_value == 0.0:
+        plt.close(fig)
+        return
+    x_axis_limit = limit or max_value * 1.05
+    y_axis_limit = max(limit or 0.0, max_value * 1.05)
+    ax.plot((0.0, x_axis_limit), (0.0, x_axis_limit), "--", color="#333333", label="perfect agreement")
+    ax.set_xlim(0.0, x_axis_limit)
+    ax.set_ylim(0.0, y_axis_limit)
+    if limit is None:
+        ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel("Ground-truth contact force (N)")
+    ax.set_ylabel("Jacobian estimate (N)")
+    ax.set_title(title)
+    ax.grid(linestyle="--", alpha=0.35)
+    ax.legend(fontsize=8, loc="upper left")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def _linear_fit(x_values, y_values):
+    mean_x = statistics.mean(x_values)
+    mean_y = statistics.mean(y_values)
+    variance_x = sum((value - mean_x) ** 2 for value in x_values)
+    if variance_x == 0.0:
+        return 0.0, mean_y
+    covariance = sum(
+        (x_value - mean_x) * (y_value - mean_y)
+        for x_value, y_value in zip(x_values, y_values)
+    )
+    slope = covariance / variance_x
+    return slope, mean_y - slope * mean_x
+
+
+def _finite_float(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _row_is_contact(row, true_force):
+    if "In Contact" not in row:
+        return true_force > 0.0
+    return _finite_float(row.get("In Contact")) not in (None, 0.0)
+
+
+def _row_is_anomaly(row):
+    return _finite_float(row.get("Is Anomaly")) not in (None, 0.0)
 
 def _save_error_bar_chart(plt, labels, means, stds, ylabel, title, path):
     fig, ax = plt.subplots(figsize=(max(6.0, 1.4 * len(labels)), 4.5))
