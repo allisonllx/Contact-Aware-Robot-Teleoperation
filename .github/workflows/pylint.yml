@@ -7,17 +7,21 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10"]
+        # MuJoCo PyPI wheels require Python >= 3.10 (3.8/3.9 try to build from
+        # source and fail with MUJOCO_PATH unset).
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pylint -r requirements.txt
+        # Prefer MuJoCo wheels; never attempt a MuJoCo source build in CI.
+        pip install pylint
+        pip install --only-binary=mujoco -r requirements.txt
     - name: Analysing the code with pylint
       run: |
         pylint analysis.py cross_tester_analysis.py experiment.py main.py franka_force stat_analysis
