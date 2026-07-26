@@ -290,12 +290,27 @@ python3 analysis.py --force-estimation-report
 ```
 
 That discovers every `force_estimation_runs/<scenario>/run_XX/` folder, reuses
-the same contact-only error metrics as a normal `analysis.py` pass (`mae_contact_n`,
-`mse_contact_n2`, `rmse_contact_n`, `bias_contact_n`), and by default also ingests
-every trial log under `experiment_results/**` as `scenario=peg_in_hole`,
-`source=tester`. Scripted peg repeats stay `source=scripted`, so the by-scenario
-table splits teleop vs scripted peg pools. Disable the tester pool with
+the same contact-only error metrics as a normal `analysis.py` pass
+(`mae_contact_n`, `mse_contact_n2`, `rmse_contact_n`, `bias_contact_n`), and by
+default ingests completed active trial logs under `experiment_results/**` as
+`scenario=peg_in_hole`, `source=tester`. Folders named `archive` or `_archive`
+are excluded. Scripted peg repeats stay `source=scripted`, so the by-scenario
+table splits teleop and scripted peg pools. Disable the tester pool with
 `--no-include-tester-pool`.
+
+To aggregate only the active tester pool and keep its outputs separate from
+scripted repeats, run:
+
+```bash
+python3 analysis.py \
+  --force-estimation-report \
+  --force-estimation-root experiment_results/force_estimation_all_testers \
+  --experiment-results-dir experiment_results \
+  --source auto
+```
+
+This writes its per-run table, by-scenario table, and plots to
+`experiment_results/force_estimation_all_testers/`.
 
 Useful options:
 
@@ -306,9 +321,10 @@ python3 analysis.py --force-estimation-report --experiment-results-dir experimen
 ```
 
 For the write-up, use `force_estimation_by_scenario.csv` for mean MAE/MSE/RMSE
-over N repeats, the bar charts under `plots/`, and the per-run
-`force_comparison_*.png` paths listed in `plots/exemplar_overlays.txt` as example
-GT-vs-estimate overlays.
+over N repeats and the bar charts under `plots/`. Use
+`estimate_vs_ground_truth.png` and `estimate_vs_ground_truth_0_150n.png` to
+inspect calibration overall and near the force threshold. Per-run
+`force_comparison_*.png` paths are listed in `plots/exemplar_overlays.txt`.
 
 #### 8. Experiment runner
 
