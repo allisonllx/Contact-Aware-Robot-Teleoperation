@@ -28,7 +28,7 @@ class VideoRecorder:
             ) from exc
 
         try:
-            import imageio_ffmpeg  # noqa: F401
+            import imageio_ffmpeg  # pylint: disable=unused-import
         except ImportError as exc:
             raise RuntimeError(
                 "Video recording requires imageio-ffmpeg (imageio fell back to a non-video writer). "

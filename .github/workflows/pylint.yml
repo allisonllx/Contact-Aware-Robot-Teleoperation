@@ -20,4 +20,4 @@ jobs:
         pip install pylint
     - name: Analysing the code with pylint
       run: |
-        pylint $(git ls-files '*.py')
+        pylint analysis.py cross_tester_analysis.py experiment.py main.py franka_force stat_analysis

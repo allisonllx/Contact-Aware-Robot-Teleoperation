@@ -47,7 +47,7 @@ def add_floor_compass(spec, origin):
     z = 0.002
     arm = 0.11
     thick = 0.007
-    decal = dict(contype=0, conaffinity=0)
+    decal = {"contype": 0, "conaffinity": 0}
 
     base.add_geom(
         name="compass_e",

@@ -542,7 +542,7 @@ class PegInHoleScenario(Scenario):
 
         for i in range(env.data.ncon):
             contact = env.data.contact[i]
-            if contact.geom1 != env.peg_geom_id and contact.geom2 != env.peg_geom_id:
+            if env.peg_geom_id not in (contact.geom1, contact.geom2):
                 continue
 
             contact_force = self._contact_force_on_peg(env, contact, i)

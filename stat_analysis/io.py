@@ -2,7 +2,6 @@
 import csv
 import json
 import math
-import statistics
 from pathlib import Path
 
 from .schemas import (

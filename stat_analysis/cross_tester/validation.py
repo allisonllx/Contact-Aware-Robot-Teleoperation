@@ -2,7 +2,6 @@
 import csv
 import json
 import math
-from pathlib import Path
 
 from ..schemas import CONDITIONS, PRIMARY_METRIC, SECONDARY_METRICS
 
@@ -154,10 +153,10 @@ def _read_active_trial_rows(root):
                         trial_index,
                         f"{PRIMARY_METRIC} is missing or non-finite",
                     ))
-                for threshold_key in threshold_values:
+                for threshold_key, values in threshold_values.items():
                     value = _float_or_blank(row.get(threshold_key, ""))
                     if math.isfinite(value):
-                        threshold_values[threshold_key].add(value)
+                        values.add(value)
                 converted = dict(row)
                 for key in (
                     PRIMARY_METRIC,

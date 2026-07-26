@@ -1,6 +1,5 @@
 
 import math
-import statistics
 
 from .io import mean, mean_or_blank, median, percentile, safe_divide, select
 from .schemas import EPS

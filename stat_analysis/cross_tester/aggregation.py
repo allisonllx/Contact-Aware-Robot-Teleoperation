@@ -2,7 +2,7 @@
 import math
 import statistics
 
-from ..schemas import CONDITIONS, PRIMARY_METRIC, SECONDARY_METRICS
+from ..schemas import PRIMARY_METRIC, SECONDARY_METRICS
 
 
 def _aggregate_participant_conditions(trial_rows):

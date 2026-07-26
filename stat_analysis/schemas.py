@@ -1,7 +1,7 @@
 
 from pathlib import Path
 
-from franka_force.config import (
+from franka_force.config import (  # pylint: disable=unused-import
     DEFAULT_FORCE_THRESHOLD_N,
     DEFAULT_JAMMING_THRESHOLD_N,
     RESULTS_DIR,

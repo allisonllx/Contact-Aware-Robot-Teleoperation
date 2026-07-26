@@ -272,7 +272,7 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    from franka_force import FrankaForceEnv
+    from franka_force.env import FrankaForceEnv
 
     env = FrankaForceEnv(
         scenario=args.scenario,
